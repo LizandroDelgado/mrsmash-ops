@@ -1,10 +1,81 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
-
+ 
+// Parser de voz — interpreta texto libre y detecta productos y cantidades
+function parsearVoz(texto, productos) {
+  const t = texto.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quitar acentos
+ 
+  const nuevasCantidades = {};
+ 
+  // Palabras de números en español
+  const numeros = {
+    'un ': 1, 'una ': 1, 'un,': 1, 'una,': 1,
+    'dos ': 2, 'dos,': 2,
+    'tres ': 3, 'tres,': 3,
+    'cuatro ': 4, 'cuatro,': 4,
+    'cinco ': 5, 'cinco,': 5,
+  };
+ 
+  // Alias de productos para reconocimiento flexible
+  const aliases = {
+    'sencilla': 'Smash Sencilla',
+    'smash sencilla': 'Smash Sencilla',
+    'simple': 'Smash Sencilla',
+    'bacon': 'Bacon Smash',
+    'bacon smash': 'Bacon Smash',
+    'doble bacon': 'Doble Bacon Smash',
+    'doble bacon smash': 'Doble Bacon Smash',
+    'bacon doble': 'Doble Bacon Smash',
+    'doble': 'Doble Smash',
+    'doble smash': 'Doble Smash',
+  };
+ 
+  // Buscar cada alias en el texto
+  // Ordenar aliases de más largo a más corto para evitar conflictos
+  const aliasesOrdenados = Object.keys(aliases).sort((a, b) => b.length - a.length);
+ 
+  let textoRestante = ' ' + t + ' ';
+ 
+  for (const alias of aliasesOrdenados) {
+    const idx = textoRestante.indexOf(alias);
+    if (idx === -1) continue;
+ 
+    const nombreProducto = aliases[alias];
+    const producto = productos.find(p => p.nombre === nombreProducto);
+    if (!producto) continue;
+ 
+    // Buscar número antes del alias
+    let cantidad = 1;
+    const textoAntes = textoRestante.substring(0, idx);
+ 
+    // Número dígito (ej: "2 bacon")
+    const matchDigito = textoAntes.match(/(\d+)\s*$/);
+    if (matchDigito) {
+      cantidad = parseInt(matchDigito[1]);
+    } else {
+      // Número en palabras
+      for (const [palabra, num] of Object.entries(numeros)) {
+        if (textoAntes.endsWith(palabra.trim()) || textoAntes.includes(palabra)) {
+          cantidad = num;
+          break;
+        }
+      }
+    }
+ 
+    nuevasCantidades[producto.id] = (nuevasCantidades[producto.id] || 0) + cantidad;
+ 
+    // Marcar como procesado
+    textoRestante = textoRestante.replace(alias, ' '.repeat(alias.length));
+  }
+ 
+  return nuevasCantidades;
+}
+ 
 export default function NuevoPedidoPage() {
   const router = useRouter();
   const [productos, setProductos] = useState([]);
@@ -13,7 +84,13 @@ export default function NuevoPedidoPage() {
   const [canal, setCanal] = useState('whatsapp');
   const [notas, setNotas] = useState('');
   const [guardando, setGuardando] = useState(false);
-
+ 
+  // Voz
+  const [escuchando, setEscuchando] = useState(false);
+  const [textoVoz, setTextoVoz] = useState('');
+  const [vozEstado, setVozEstado] = useState(''); // 'escuchando' | 'procesando' | 'listo' | 'error'
+  const recognitionRef = useRef(null);
+ 
   useEffect(() => {
     supabase
       .from('productos')
@@ -29,33 +106,90 @@ export default function NuevoPedidoPage() {
         }
       });
   }, []);
-
+ 
+  const iniciarVoz = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome en Android.');
+      return;
+    }
+ 
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-MX';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognitionRef.current = recognition;
+ 
+    recognition.onstart = () => {
+      setEscuchando(true);
+      setVozEstado('escuchando');
+      setTextoVoz('');
+      if (navigator.vibrate) navigator.vibrate(100);
+    };
+ 
+    recognition.onresult = (event) => {
+      const texto = event.results[0][0].transcript;
+      setTextoVoz(texto);
+      setVozEstado('procesando');
+ 
+      // Parsear y actualizar cantidades
+      const nuevasCantidades = parsearVoz(texto, productos);
+      if (Object.keys(nuevasCantidades).length > 0) {
+        setCantidades(prev => {
+          const updated = { ...prev };
+          for (const [id, cant] of Object.entries(nuevasCantidades)) {
+            updated[id] = cant;
+          }
+          return updated;
+        });
+        setVozEstado('listo');
+        if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+      } else {
+        setVozEstado('error');
+      }
+    };
+ 
+    recognition.onerror = () => {
+      setVozEstado('error');
+      setEscuchando(false);
+    };
+ 
+    recognition.onend = () => {
+      setEscuchando(false);
+    };
+ 
+    recognition.start();
+  };
+ 
+  const detenerVoz = () => {
+    recognitionRef.current?.stop();
+    setEscuchando(false);
+  };
+ 
   const incrementar = (id) =>
     setCantidades((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-
+ 
   const decrementar = (id) =>
     setCantidades((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) - 1) }));
-
+ 
   const total = productos.reduce(
     (s, p) => s + (cantidades[p.id] || 0) * p.precio_venta,
     0
   );
-
+ 
   const itemsSeleccionados = productos.filter((p) => (cantidades[p.id] || 0) > 0);
-
+ 
   const guardar = async () => {
     if (itemsSeleccionados.length === 0) return;
     setGuardando(true);
     if (navigator.vibrate) navigator.vibrate(50);
-
+ 
     try {
       const ahora = new Date();
       const hora = ahora.toTimeString().slice(0, 8);
       const fecha = ahora.toISOString().split('T')[0];
-
-      // Obtener negocio_id del primer producto (todos son del mismo negocio)
       const negocio_id = productos[0]?.negocio_id;
-
+ 
       const { data: pedido, error: pedidoError } = await supabase
         .from('pedidos')
         .insert({
@@ -70,9 +204,9 @@ export default function NuevoPedidoPage() {
         })
         .select()
         .single();
-
+ 
       if (pedidoError) throw pedidoError;
-
+ 
       const items = itemsSeleccionados.map((p) => ({
         pedido_id: pedido.id,
         producto_id: p.id,
@@ -80,9 +214,8 @@ export default function NuevoPedidoPage() {
         precio: p.precio_venta,
         costo: p.costo_insumos,
       }));
-
+ 
       await supabase.from('pedido_items').insert(items);
-
       router.push('/');
     } catch (err) {
       console.error(err);
@@ -91,7 +224,21 @@ export default function NuevoPedidoPage() {
       setGuardando(false);
     }
   };
-
+ 
+  const vozColor = {
+    escuchando: '#FF4D00',
+    procesando: '#eab308',
+    listo: '#22c55e',
+    error: '#ef4444',
+  }[vozEstado] || '#888';
+ 
+  const vozMsg = {
+    escuchando: '🎤 Escuchando...',
+    procesando: '⚙️ Procesando...',
+    listo: '✓ ' + textoVoz,
+    error: '✗ No entendí. Intenta de nuevo.',
+  }[vozEstado] || '';
+ 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
       <header
@@ -103,19 +250,49 @@ export default function NuevoPedidoPage() {
         </button>
         <h1 className="font-bold text-lg">Nuevo pedido</h1>
       </header>
-
+ 
       <main className="flex-1 px-4 pt-4 pb-40 space-y-6">
-        {/* Productos */}
+        {/* Sección productos + botón de voz */}
         <section>
-          <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#FF4D00' }}>
-            ¿QUÉ PIDIERON?
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold tracking-wider" style={{ color: '#FF4D00' }}>
+              ¿QUÉ PIDIERON?
+            </p>
+            {/* Botón de voz */}
+            <button
+              onClick={escuchando ? detenerVoz : iniciarVoz}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm"
+              style={{
+                background: escuchando ? '#FF4D00' : '#1e1e1e',
+                color: '#fff',
+                border: `2px solid ${escuchando ? '#FF4D00' : '#2a2a2a'}`,
+                animation: escuchando ? 'pulse 1s infinite' : 'none',
+              }}
+            >
+              {escuchando ? <MicOff size={18} /> : <Mic size={18} />}
+              {escuchando ? 'Detener' : 'Voz'}
+            </button>
+          </div>
+ 
+          {/* Feedback de voz */}
+          {vozEstado && (
+            <div
+              className="px-4 py-3 rounded-xl mb-3 text-sm font-medium"
+              style={{ background: `${vozColor}18`, color: vozColor, border: `1px solid ${vozColor}44` }}
+            >
+              {vozMsg}
+            </div>
+          )}
+ 
           <div className="space-y-2">
             {productos.map((p) => (
               <div
                 key={p.id}
                 className="flex items-center justify-between p-4 rounded-2xl"
-                style={{ background: '#141414' }}
+                style={{
+                  background: (cantidades[p.id] || 0) > 0 ? '#1a1a0a' : '#141414',
+                  border: `1px solid ${(cantidades[p.id] || 0) > 0 ? '#FF4D0044' : 'transparent'}`,
+                }}
               >
                 <div>
                   <p className="font-bold text-white">{p.nombre}</p>
@@ -148,7 +325,7 @@ export default function NuevoPedidoPage() {
             ))}
           </div>
         </section>
-
+ 
         {/* Cliente */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>
@@ -163,7 +340,7 @@ export default function NuevoPedidoPage() {
             style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }}
           />
         </section>
-
+ 
         {/* Canal */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>
@@ -174,7 +351,7 @@ export default function NuevoPedidoPage() {
               <button
                 key={c}
                 onClick={() => setCanal(c)}
-                className="flex-1 py-3 rounded-xl font-bold text-sm capitalize"
+                className="flex-1 py-3 rounded-xl font-bold text-sm"
                 style={{
                   background: canal === c ? '#FF4D00' : '#141414',
                   color: canal === c ? '#fff' : '#888',
@@ -186,7 +363,7 @@ export default function NuevoPedidoPage() {
             ))}
           </div>
         </section>
-
+ 
         {/* Notas */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>
@@ -202,8 +379,8 @@ export default function NuevoPedidoPage() {
           />
         </section>
       </main>
-
-      {/* Footer fijo con total y botón */}
+ 
+      {/* Footer */}
       <div
         className="fixed bottom-0 left-0 right-0 px-4 pt-3"
         style={{
