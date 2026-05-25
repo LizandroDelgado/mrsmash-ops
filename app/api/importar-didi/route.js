@@ -6,16 +6,8 @@ export async function POST(request) {
   try {
     const supabase = createServiceClient();
 
-    // Obtener negocio_id del primer negocio (single-tenant por ahora)
-    const { data: negocio } = await supabase
-      .from('negocios')
-      .select('id')
-      .limit(1)
-      .single();
-
-    if (!negocio?.id) {
-      return NextResponse.json({ error: 'Negocio no encontrado' }, { status: 400 });
-    }
+    // negocio_id hardcodeado (single-tenant) — evita depender de permisos en tabla negocios
+    const negocioId = '34797ee1-37fa-4736-ad56-35578a126b08';
 
     const formData = await request.formData();
     const file = formData.get('archivo');
@@ -24,7 +16,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 });
     }
 
-    const { pedidos, errores, resumen } = await parseDidiExcel(file, negocio.id);
+    const { pedidos, errores, resumen } = await parseDidiExcel(file, negocioId);
 
     if (pedidos.length === 0) {
       return NextResponse.json({
