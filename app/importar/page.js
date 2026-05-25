@@ -59,6 +59,11 @@ export default function ImportarPage() {
           errores:             data.errores,
           resumen:             data.resumen,
           columnasDisponibles: data.columnasDisponibles,
+          // debug de error Supabase
+          errorCode:           data.code,
+          errorHint:           data.hint,
+          errorDetails:        data.details,
+          primerRegistro:      data.primer_registro,
         });
       } catch {
         acum.push({
@@ -267,6 +272,22 @@ export default function ImportarPage() {
                       <p className="text-xs" style={{ color: r.success ? '#666' : '#ef4444' }}>
                         {r.mensaje}
                       </p>
+                      {!r.success && r.errorCode && (
+                        <p className="text-xs mt-0.5 font-mono" style={{ color: '#f97316' }}>
+                          code: {r.errorCode}{r.errorHint ? ` · ${r.errorHint}` : ''}
+                        </p>
+                      )}
+                      {!r.success && r.primerRegistro && (
+                        <details className="mt-1">
+                          <summary className="text-xs cursor-pointer" style={{ color: '#555' }}>
+                            Ver registro enviado
+                          </summary>
+                          <pre className="text-xs mt-1 p-2 rounded overflow-auto"
+                            style={{ background: '#0a0a0a', color: '#aaa', maxHeight: 140 }}>
+                            {JSON.stringify(r.primerRegistro, null, 2)}
+                          </pre>
+                        </details>
+                      )}
                       {!r.success && r.columnasDisponibles?.length > 0 && (
                         <p className="text-xs mt-1 break-all" style={{ color: '#555' }}>
                           Columnas: {r.columnasDisponibles.join(' · ')}
