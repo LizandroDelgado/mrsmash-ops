@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
- 
+
 function parsearVoz(texto, productos, canal) {
-  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const nuevasCantidades = {};
   const numeros = {
     'un ': 1, 'una ': 1, 'dos ': 2, 'tres ': 3, 'cuatro ': 4, 'cinco ': 5,
@@ -48,18 +48,23 @@ function parsearVoz(texto, productos, canal) {
   }
   return nuevasCantidades;
 }
- 
+
 function getPrecio(producto, canal) {
   if (canal === 'didi') return producto.precio_didi || producto.precio_venta;
   if (canal === 'whatsapp') return producto.precio_whatsapp || producto.precio_venta;
   return producto.precio_whatsapp || producto.precio_venta;
 }
- 
+
 function getPrecioNeto(producto, canal) {
   if (canal === 'didi') return producto.precio_didi_neto || producto.precio_venta;
   return getPrecio(producto, canal);
 }
- 
+
+// Promo Martes-Jueves: Smash Sencilla a $99
+const PRECIO_PROMO = 99;
+const DIA_HOY = new Date().getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue
+const ES_DIA_PROMO = DIA_HOY >= 2 && DIA_HOY <= 4;
+
 export default function NuevoPedidoPage() {
   const router = useRouter();
   const [productos, setProductos] = useState([]);
@@ -71,8 +76,10 @@ export default function NuevoPedidoPage() {
   const [escuchando, setEscuchando] = useState(false);
   const [textoVoz, setTextoVoz] = useState('');
   const [vozEstado, setVozEstado] = useState('');
+  // Promo: activa por defecto si es día de promo
+  const [promoActiva, setPromoActiva] = useState(ES_DIA_PROMO);
   const recognitionRef = useRef(null);
- 
+
   useEffect(() => {
     supabase.from('productos').select('*').eq('disponible', true).order('orden')
       .then(({ data }) => {
@@ -84,7 +91,20 @@ export default function NuevoPedidoPage() {
         }
       });
   }, []);
- 
+
+  // Precio final aplicando promo si corresponde
+  const getPrecioFinal = (producto, canalActual) => {
+    if (
+      promoActiva &&
+      ES_DIA_PROMO &&
+      producto.nombre === 'Smash Sencilla' &&
+      canalActual !== 'didi'
+    ) {
+      return PRECIO_PROMO;
+    }
+    return getPrecio(producto, canalActual);
+  };
+
   const iniciarVoz = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { alert('Usa Chrome en Android para reconocimiento de voz.'); return; }
@@ -109,15 +129,15 @@ export default function NuevoPedidoPage() {
     recognition.onend = () => setEscuchando(false);
     recognition.start();
   };
- 
+
   const detenerVoz = () => { recognitionRef.current?.stop(); setEscuchando(false); };
   const incrementar = (id) => setCantidades((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
   const decrementar = (id) => setCantidades((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) - 1) }));
- 
-  const total = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecio(p, canal), 0);
+
+  const total = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioFinal(p, canal), 0);
   const totalNeto = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioNeto(p, canal), 0);
   const itemsSeleccionados = productos.filter((p) => (cantidades[p.id] || 0) > 0);
- 
+
   const guardar = async () => {
     if (itemsSeleccionados.length === 0) return;
     setGuardando(true);
@@ -141,27 +161,29 @@ export default function NuevoPedidoPage() {
         pedido_id: pedido.id,
         producto_id: p.id,
         cantidad: cantidades[p.id],
-        precio: getPrecio(p, canal),
+        precio: getPrecioFinal(p, canal),
         costo: p.costo_insumos,
       }));
-      await supabase.from('pedido_items').insert(items);
+      // Verificar errores en la inserción de items
+      const { error: itemsError } = await supabase.from('pedido_items').insert(items);
+      if (itemsError) throw itemsError;
       router.push('/');
     } catch (err) {
       console.error(err);
       alert('Error al guardar. Intenta de nuevo.');
     } finally { setGuardando(false); }
   };
- 
+
   const vozColor = { escuchando: '#FF4D00', procesando: '#eab308', listo: '#22c55e', error: '#ef4444' }[vozEstado] || '#888';
   const vozMsg = { escuchando: '🎤 Escuchando...', procesando: '⚙️ Procesando...', listo: '✓ ' + textoVoz, error: '✗ No entendí. Intenta de nuevo.' }[vozEstado] || '';
- 
+
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
       <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3" style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
         <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg"><ArrowLeft size={22} /></button>
         <h1 className="font-bold text-lg">Nuevo pedido</h1>
       </header>
- 
+
       <main className="flex-1 px-4 pt-4 pb-40 space-y-6">
         {/* Canal primero — afecta precios */}
         <section>
@@ -180,7 +202,7 @@ export default function NuevoPedidoPage() {
             </p>
           )}
         </section>
- 
+
         {/* Productos */}
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -192,6 +214,31 @@ export default function NuevoPedidoPage() {
               {escuchando ? 'Detener' : 'Voz'}
             </button>
           </div>
+
+          {/* Banner promo Martes-Jueves */}
+          {ES_DIA_PROMO && canal !== 'didi' && (
+            <div className="mb-3 flex items-center justify-between px-4 py-3 rounded-xl"
+              style={{ background: promoActiva ? '#1a0800' : '#141414', border: `1px solid ${promoActiva ? '#FF4D0055' : '#2a2a2a'}` }}>
+              <div>
+                <p className="text-sm font-bold" style={{ color: promoActiva ? '#FF4D00' : '#888' }}>
+                  🏷️ Promo Mar–Jue
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: '#666' }}>
+                  Smash Sencilla a $99
+                </p>
+              </div>
+              <button
+                onClick={() => setPromoActiva((prev) => !prev)}
+                className="px-4 py-2 rounded-xl font-bold text-sm"
+                style={{
+                  background: promoActiva ? '#FF4D00' : '#2a2a2a',
+                  color: promoActiva ? '#fff' : '#888',
+                }}>
+                {promoActiva ? 'Activa' : 'Inactiva'}
+              </button>
+            </div>
+          )}
+
           {vozEstado && (
             <div className="px-4 py-3 rounded-xl mb-3 text-sm font-medium"
               style={{ background: `${vozColor}18`, color: vozColor, border: `1px solid ${vozColor}44` }}>
@@ -200,16 +247,25 @@ export default function NuevoPedidoPage() {
           )}
           <div className="space-y-2">
             {productos.map((p) => {
-              const precio = getPrecio(p, canal);
+              const precio = getPrecioFinal(p, canal);
+              const precioOriginal = getPrecio(p, canal);
               const precioNeto = getPrecioNeto(p, canal);
               const cant = cantidades[p.id] || 0;
+              const esProductoPromo = promoActiva && ES_DIA_PROMO && p.nombre === 'Smash Sencilla' && canal !== 'didi';
               return (
                 <div key={p.id} className="flex items-center justify-between p-4 rounded-2xl"
                   style={{ background: cant > 0 ? '#1a1a0a' : '#141414', border: `1px solid ${cant > 0 ? '#FF4D0044' : 'transparent'}` }}>
                   <div>
                     <p className="font-bold text-white">{p.nombre}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm" style={{ color: '#888' }}>{formatMXN(precio)}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold" style={{ color: esProductoPromo ? '#FF4D00' : '#888' }}>
+                        {formatMXN(precio)}
+                      </p>
+                      {esProductoPromo && precioOriginal !== precio && (
+                        <p className="text-xs line-through" style={{ color: '#555' }}>
+                          {formatMXN(precioOriginal)}
+                        </p>
+                      )}
                       {canal === 'didi' && (
                         <p className="text-xs" style={{ color: '#22c55e' }}>neto {formatMXN(precioNeto)}</p>
                       )}
@@ -229,7 +285,7 @@ export default function NuevoPedidoPage() {
             })}
           </div>
         </section>
- 
+
         {/* Cliente */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>CLIENTE (OPCIONAL)</p>
@@ -238,7 +294,7 @@ export default function NuevoPedidoPage() {
             className="w-full px-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none"
             style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }} />
         </section>
- 
+
         {/* Notas */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>NOTAS (OPCIONAL)</p>
@@ -248,7 +304,7 @@ export default function NuevoPedidoPage() {
             style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }} />
         </section>
       </main>
- 
+
       <div className="fixed bottom-0 left-0 right-0 px-4 pt-3"
         style={{ background: '#0a0a0a', borderTop: '1px solid #1e1e1e', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
         <div className="flex items-center justify-between mb-3">

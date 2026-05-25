@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { Trash2 } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, getInicioSemana } from '@/lib/calculos';
@@ -9,7 +8,6 @@ import { formatMXN, getInicioSemana } from '@/lib/calculos';
 const CATEGORIAS = ['Carne', 'Pan', 'Verdura', 'Salsas', 'Empaque', 'Otro'];
 
 export default function InsumosPage() {
-  const router = useRouter();
   const [descripcion, setDescripcion] = useState('');
   const [monto, setMonto] = useState('');
   const [categoria, setCategoria] = useState('');
@@ -17,9 +15,9 @@ export default function InsumosPage() {
   const [guardando, setGuardando] = useState(false);
   const [compras, setCompras] = useState([]);
   const [negocioId, setNegocioId] = useState(null);
+  const [confirmEliminar, setConfirmEliminar] = useState(null);
 
   useEffect(() => {
-    // Obtener negocio_id
     supabase
       .from('productos')
       .select('negocio_id')
@@ -72,8 +70,19 @@ export default function InsumosPage() {
       setMonto('');
       setCategoria('');
       cargarCompras(negocioId);
+    } else {
+      alert('Error al guardar. Intenta de nuevo.');
     }
     setGuardando(false);
+  };
+
+  const eliminarCompra = async (id) => {
+    // Primero eliminar en Supabase, luego actualizar estado local
+    const { error } = await supabase.from('compras_insumos').delete().eq('id', id);
+    if (error) { alert('Error al eliminar. Intenta de nuevo.'); return; }
+    setCompras((prev) => prev.filter((c) => c.id !== id));
+    setConfirmEliminar(null);
+    if (navigator.vibrate) navigator.vibrate(100);
   };
 
   const totalSemana = compras.reduce((s, c) => s + c.monto, 0);
@@ -197,18 +206,46 @@ export default function InsumosPage() {
             </div>
             <div className="space-y-2">
               {compras.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl"
-                  style={{ background: '#141414' }}
-                >
-                  <div>
-                    <p className="text-white text-sm font-medium">{c.descripcion}</p>
-                    <p className="text-xs" style={{ color: '#666' }}>
-                      {c.categoria} · {c.fecha}
-                    </p>
+                <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: '#141414' }}>
+                  {/* Fila principal */}
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{c.descripcion}</p>
+                      <p className="text-xs" style={{ color: '#666' }}>
+                        {c.categoria} · {c.fecha}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 ml-3">
+                      <span className="font-bold text-white">{formatMXN(c.monto)}</span>
+                      <button
+                        onClick={() => setConfirmEliminar(confirmEliminar === c.id ? null : c.id)}
+                        className="p-2 rounded-lg"
+                        style={{ background: confirmEliminar === c.id ? '#ef444422' : '#1e1e1e' }}
+                      >
+                        <Trash2 size={15} style={{ color: confirmEliminar === c.id ? '#ef4444' : '#555' }} />
+                      </button>
+                    </div>
                   </div>
-                  <span className="font-bold text-white">{formatMXN(c.monto)}</span>
+
+                  {/* Confirmación de eliminación */}
+                  {confirmEliminar === c.id && (
+                    <div className="flex gap-2 px-4 pb-3">
+                      <button
+                        onClick={() => setConfirmEliminar(null)}
+                        className="flex-1 py-2 rounded-xl text-sm font-bold"
+                        style={{ background: '#1e1e1e', color: '#888' }}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => eliminarCompra(c.id)}
+                        className="flex-1 py-2 rounded-xl text-sm font-bold"
+                        style={{ background: '#ef444422', color: '#ef4444' }}
+                      >
+                        Confirmar borrar
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

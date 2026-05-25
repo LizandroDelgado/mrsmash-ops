@@ -78,8 +78,12 @@ export default function HomePage() {
   };
  
   const eliminarPedido = async (id) => {
-    await supabase.from('pedido_items').delete().eq('pedido_id', id);
-    await supabase.from('pedidos').delete().eq('id', id);
+    // Primero eliminar en Supabase, luego actualizar estado local
+    const { error: errItems } = await supabase.from('pedido_items').delete().eq('pedido_id', id);
+    if (errItems) { alert('Error al eliminar items. Intenta de nuevo.'); return; }
+    const { error: errPedido } = await supabase.from('pedidos').delete().eq('id', id);
+    if (errPedido) { alert('Error al eliminar pedido. Intenta de nuevo.'); return; }
+    // Solo actualizar estado local si Supabase confirmó la eliminación
     setPedidos((prev) => prev.filter((p) => p.id !== id));
     setConfirmEliminar(null);
     if (navigator.vibrate) navigator.vibrate(100);

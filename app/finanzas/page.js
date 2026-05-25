@@ -1,16 +1,63 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
-import { formatMXN, calcularPuntoEquilibrio, getInicioSemana } from '@/lib/calculos';
+import { formatMXN, calcularPuntoEquilibrio } from '@/lib/calculos';
 
-const GANANCIA_PROMEDIO_BURGER = 58; // promedio de los 4 productos
+const GANANCIA_PROMEDIO_BURGER = 58;
+
+const MESES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MESES_FULL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+// Retorna { inicio, fin, label } para la semana con offset respecto a la actual
+function getSemanaRange(offset) {
+  const hoy = new Date();
+  const diaSemana = hoy.getDay(); // 0=Dom
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const lunes = new Date(hoy);
+  lunes.setDate(hoy.getDate() + diff + offset * 7);
+  lunes.setHours(0, 0, 0, 0);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  return {
+    inicio: lunes.toISOString().split('T')[0],
+    fin: domingo.toISOString().split('T')[0],
+    label:
+      `${lunes.getDate()} ${MESES_CORTO[lunes.getMonth()]}` +
+      (lunes.getMonth() !== domingo.getMonth()
+        ? ` – ${domingo.getDate()} ${MESES_CORTO[domingo.getMonth()]}`
+        : ` – ${domingo.getDate()} ${MESES_CORTO[domingo.getMonth()]}`),
+  };
+}
+
+// Retorna { inicio, fin, label } para el mes con offset respecto al actual
+function getMesRange(offset) {
+  const hoy = new Date();
+  const fecha = new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
+  const fin = new Date(fecha.getFullYear(), fecha.getMonth() + 1, 0);
+  return {
+    inicio: fecha.toISOString().split('T')[0],
+    fin: fin.toISOString().split('T')[0],
+    label: `${MESES_FULL[fecha.getMonth()]} ${fecha.getFullYear()}`,
+  };
+}
 
 export default function FinanzasPage() {
   const [periodo, setPeriodo] = useState('semana');
+  const [semanaOffset, setSemanaOffset] = useState(0); // 0 = semana actual, -1 = anterior, etc.
+  const [mesOffset, setMesOffset] = useState(0);       // 0 = mes actual, -1 = anterior, etc.
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
   const [negocioId, setNegocioId] = useState(null);
+
+  // Calcular rango de fechas según periodo y offset
+  const getRango = useCallback(() => {
+    const hoy = new Date().toISOString().split('T')[0];
+    if (periodo === 'semana') return getSemanaRange(semanaOffset);
+    if (periodo === 'mes') return getMesRange(mesOffset);
+    return { inicio: '2020-01-01', fin: hoy, label: 'Todo el historial' };
+  }, [periodo, semanaOffset, mesOffset]);
 
   useEffect(() => {
     supabase
@@ -19,29 +66,18 @@ export default function FinanzasPage() {
       .limit(1)
       .single()
       .then(({ data }) => {
-        if (data?.negocio_id) {
-          setNegocioId(data.negocio_id);
-          cargarDatos(data.negocio_id, 'semana');
-        }
+        if (data?.negocio_id) setNegocioId(data.negocio_id);
       });
   }, []);
 
   useEffect(() => {
-    if (negocioId) cargarDatos(negocioId, periodo);
-  }, [periodo, negocioId]);
+    if (negocioId) cargarDatos(negocioId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [negocioId, periodo, semanaOffset, mesOffset]);
 
-  const cargarDatos = async (nid, p) => {
+  const cargarDatos = async (nid) => {
     setLoading(true);
-    const hoy = new Date();
-    let fechaInicio;
-
-    if (p === 'semana') {
-      fechaInicio = getInicioSemana();
-    } else if (p === 'mes') {
-      fechaInicio = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-01`;
-    } else {
-      fechaInicio = '2020-01-01';
-    }
+    const { inicio, fin } = getRango();
 
     // Pedidos WhatsApp del periodo
     const { data: pedidosWA } = await supabase
@@ -49,21 +85,24 @@ export default function FinanzasPage() {
       .select('total, pedido_items(cantidad, precio, costo)')
       .eq('negocio_id', nid)
       .eq('canal', 'whatsapp')
-      .gte('fecha', fechaInicio);
+      .gte('fecha', inicio)
+      .lte('fecha', fin);
 
     // Importaciones Didi del periodo
     const { data: pedidosDidi } = await supabase
       .from('importaciones_didi')
       .select('venta_bruta, comision_didi, costo_promos, ganancia_neta')
       .eq('negocio_id', nid)
-      .gte('fecha', fechaInicio);
+      .gte('fecha', inicio)
+      .lte('fecha', fin);
 
     // Insumos del periodo
     const { data: insumos } = await supabase
       .from('compras_insumos')
       .select('monto')
       .eq('negocio_id', nid)
-      .gte('fecha', fechaInicio);
+      .gte('fecha', inicio)
+      .lte('fecha', fin);
 
     // Calcular totales
     const ventasWA = (pedidosWA || []).reduce((s, p) => s + (p.total || 0), 0);
@@ -79,20 +118,8 @@ export default function FinanzasPage() {
       (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0),
       0
     );
-    const burgersDidi = (pedidosDidi || []).length; // aprox, cada importacion = 1 pedido
+    const burgersDidi = (pedidosDidi || []).length;
     const total_burgers = burgersWA + burgersDidi;
-
-    // Por producto
-    const porProducto = {};
-    (pedidosWA || []).forEach((p) => {
-      (p.pedido_items || []).forEach((item) => {
-        if (!porProducto[item.precio]) {
-          porProducto[item.precio] = { ventas: 0, cantidad: 0 };
-        }
-        porProducto[item.precio].ventas += item.precio * item.cantidad;
-        porProducto[item.precio].cantidad += item.cantidad;
-      });
-    });
 
     setDatos({
       ventas_brutas,
@@ -109,6 +136,8 @@ export default function FinanzasPage() {
     ? ((datos.ganancia_real / datos.ventas_brutas) * 100).toFixed(0)
     : 0;
 
+  const rango = getRango();
+
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
       <header
@@ -119,22 +148,103 @@ export default function FinanzasPage() {
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
-        {/* Selector periodo */}
+        {/* Selector de periodo */}
         <div className="flex gap-2">
-          {['semana', 'mes', 'total'].map((p) => (
+          {[
+            { key: 'semana', label: 'Semana' },
+            { key: 'mes', label: 'Mes' },
+            { key: 'total', label: 'Todo' },
+          ].map(({ key, label }) => (
             <button
-              key={p}
-              onClick={() => setPeriodo(p)}
-              className="flex-1 py-2 rounded-xl font-bold text-sm capitalize"
+              key={key}
+              onClick={() => setPeriodo(key)}
+              className="flex-1 py-2 rounded-xl font-bold text-sm"
               style={{
-                background: periodo === p ? '#FF4D00' : '#141414',
-                color: periodo === p ? '#fff' : '#888',
+                background: periodo === key ? '#FF4D00' : '#141414',
+                color: periodo === key ? '#fff' : '#888',
               }}
             >
-              {p === 'semana' ? 'Semana' : p === 'mes' ? 'Mes' : 'Todo'}
+              {label}
             </button>
           ))}
         </div>
+
+        {/* Navegador de semana */}
+        {periodo === 'semana' && (
+          <div
+            className="flex items-center justify-between px-3 py-2 rounded-xl"
+            style={{ background: '#141414', border: '1px solid #2a2a2a' }}
+          >
+            <button
+              onClick={() => setSemanaOffset((o) => o - 1)}
+              className="p-2 rounded-lg"
+              style={{ background: '#1e1e1e' }}
+            >
+              <ChevronLeft size={18} style={{ color: '#aaa' }} />
+            </button>
+            <div className="text-center">
+              <p className="text-sm font-bold text-white">{rango.label}</p>
+              {semanaOffset === 0 && (
+                <p className="text-xs" style={{ color: '#FF4D00' }}>Semana actual</p>
+              )}
+              {semanaOffset < 0 && (
+                <p className="text-xs" style={{ color: '#888' }}>
+                  {semanaOffset === -1 ? 'Semana pasada' : `Hace ${Math.abs(semanaOffset)} semanas`}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setSemanaOffset((o) => Math.min(0, o + 1))}
+              disabled={semanaOffset === 0}
+              className="p-2 rounded-lg"
+              style={{ background: '#1e1e1e', opacity: semanaOffset === 0 ? 0.3 : 1 }}
+            >
+              <ChevronRight size={18} style={{ color: '#aaa' }} />
+            </button>
+          </div>
+        )}
+
+        {/* Navegador de mes */}
+        {periodo === 'mes' && (
+          <div
+            className="flex items-center justify-between px-3 py-2 rounded-xl"
+            style={{ background: '#141414', border: '1px solid #2a2a2a' }}
+          >
+            <button
+              onClick={() => setMesOffset((o) => o - 1)}
+              className="p-2 rounded-lg"
+              style={{ background: '#1e1e1e' }}
+            >
+              <ChevronLeft size={18} style={{ color: '#aaa' }} />
+            </button>
+            <div className="text-center">
+              <p className="text-sm font-bold text-white">{rango.label}</p>
+              {mesOffset === 0 && (
+                <p className="text-xs" style={{ color: '#FF4D00' }}>Mes actual</p>
+              )}
+              {mesOffset < 0 && (
+                <p className="text-xs" style={{ color: '#888' }}>
+                  {mesOffset === -1 ? 'Mes pasado' : `Hace ${Math.abs(mesOffset)} meses`}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setMesOffset((o) => Math.min(0, o + 1))}
+              disabled={mesOffset === 0}
+              className="p-2 rounded-lg"
+              style={{ background: '#1e1e1e', opacity: mesOffset === 0 ? 0.3 : 1 }}
+            >
+              <ChevronRight size={18} style={{ color: '#aaa' }} />
+            </button>
+          </div>
+        )}
+
+        {/* Etiqueta periodo total */}
+        {periodo === 'total' && (
+          <p className="text-xs text-center" style={{ color: '#666' }}>
+            Mostrando todo el historial
+          </p>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-12">
@@ -148,7 +258,10 @@ export default function FinanzasPage() {
             {/* Ganancia real — hero card */}
             <div
               className="rounded-2xl p-5 text-center"
-              style={{ background: 'linear-gradient(135deg, #141414 0%, #1a1a0a 100%)', border: '1px solid #2a2a0a' }}
+              style={{
+                background: 'linear-gradient(135deg, #141414 0%, #1a1a0a 100%)',
+                border: '1px solid #2a2a0a',
+              }}
             >
               <p className="text-xs font-bold tracking-widest mb-2" style={{ color: '#888' }}>
                 GANANCIA REAL
@@ -195,7 +308,10 @@ export default function FinanzasPage() {
             </div>
 
             {/* Punto de equilibrio */}
-            <div className="rounded-2xl p-4" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
+            <div
+              className="rounded-2xl p-4"
+              style={{ background: '#141414', border: '1px solid #2a2a2a' }}
+            >
               <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>
                 PUNTO DE EQUILIBRIO
               </p>
@@ -204,7 +320,9 @@ export default function FinanzasPage() {
                   <p className="text-white text-sm">Necesitas vender</p>
                   <p className="text-3xl font-bold text-white">
                     {datos.punto_equilibrio}
-                    <span className="text-base font-normal ml-1" style={{ color: '#888' }}>burgers</span>
+                    <span className="text-base font-normal ml-1" style={{ color: '#888' }}>
+                      burgers
+                    </span>
                   </p>
                   <p className="text-sm mt-1" style={{ color: '#888' }}>
                     para cubrir tus costos
@@ -214,7 +332,10 @@ export default function FinanzasPage() {
                   <p className="text-sm" style={{ color: '#888' }}>Ya vendiste</p>
                   <p
                     className="text-3xl font-bold"
-                    style={{ color: datos.total_burgers >= datos.punto_equilibrio ? '#22c55e' : '#eab308' }}
+                    style={{
+                      color:
+                        datos.total_burgers >= datos.punto_equilibrio ? '#22c55e' : '#eab308',
+                    }}
                   >
                     {datos.total_burgers}
                   </p>
@@ -229,8 +350,12 @@ export default function FinanzasPage() {
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
-                    width: `${Math.min(100, (datos.total_burgers / Math.max(datos.punto_equilibrio, 1)) * 100)}%`,
-                    background: datos.total_burgers >= datos.punto_equilibrio ? '#22c55e' : '#FF4D00',
+                    width: `${Math.min(
+                      100,
+                      (datos.total_burgers / Math.max(datos.punto_equilibrio, 1)) * 100
+                    )}%`,
+                    background:
+                      datos.total_burgers >= datos.punto_equilibrio ? '#22c55e' : '#FF4D00',
                   }}
                 />
               </div>
