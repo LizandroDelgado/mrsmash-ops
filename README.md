@@ -78,8 +78,8 @@ app/
   finanzas/            → Dashboard de ganancia real
   importar/            → Importar Excel de Didi
   api/
-    pedidos/           → POST crear pedido, PATCH cambiar estado
-    insumos/           → POST registrar compra
+    pedidos/           → POST crear pedido, PATCH cambiar estado, DELETE eliminar
+    insumos/           → POST registrar compra, DELETE eliminar
     importar-didi/     → POST procesar Excel de Didi
 
 components/
@@ -93,6 +93,26 @@ lib/
 store/
   index.js             → Zustand store global
 ```
+
+---
+
+## Supabase — GRANTs requeridos
+
+Ejecutar en **Supabase → SQL Editor** del proyecto `effxuvviyhaksllmcrqh`:
+
+```sql
+-- El archivo completo está en supabase/grants.sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON pedidos           TO anon;
+GRANT SELECT, INSERT, DELETE         ON pedido_items      TO anon;
+GRANT SELECT, INSERT, DELETE         ON compras_insumos   TO anon;
+GRANT SELECT, INSERT                 ON productos         TO anon;
+GRANT SELECT, INSERT, DELETE         ON importaciones_didi TO anon;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
+```
+
+> Las API routes del servidor (`/api/*`) usan `SUPABASE_SERVICE_ROLE_KEY` y no
+> necesitan estos GRANTs, pero aplicarlos permite que el cliente funcione
+> aunque haya un problema con la variable de entorno en Vercel.
 
 ---
 

@@ -37,12 +37,48 @@ export async function PATCH(request) {
     const supabase = createServiceClient();
     const { id, estado } = await request.json();
 
+    if (!id || !estado) {
+      return NextResponse.json({ error: 'id y estado requeridos' }, { status: 400 });
+    }
+
     const { error } = await supabase
       .from('pedidos')
       .update({ estado })
       .eq('id', id);
 
     if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const supabase = createServiceClient();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'id requerido' }, { status: 400 });
+    }
+
+    // Primero eliminar items (respetar foreign key constraint)
+    const { error: itemsError } = await supabase
+      .from('pedido_items')
+      .delete()
+      .eq('pedido_id', id);
+
+    if (itemsError) throw itemsError;
+
+    // Luego eliminar el pedido
+    const { error: pedidoError } = await supabase
+      .from('pedidos')
+      .delete()
+      .eq('id', id);
+
+    if (pedidoError) throw pedidoError;
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

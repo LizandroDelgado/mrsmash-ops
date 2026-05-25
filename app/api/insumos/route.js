@@ -24,3 +24,25 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const supabase = createServiceClient();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'id requerido' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('compras_insumos')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

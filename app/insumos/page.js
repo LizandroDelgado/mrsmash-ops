@@ -77,9 +77,14 @@ export default function InsumosPage() {
   };
 
   const eliminarCompra = async (id) => {
-    // Primero eliminar en Supabase, luego actualizar estado local
-    const { error } = await supabase.from('compras_insumos').delete().eq('id', id);
-    if (error) { alert('Error al eliminar. Intenta de nuevo.'); return; }
+    // Eliminar via API route (usa service role key)
+    const res = await fetch(`/api/insumos?id=${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Error al eliminar: ' + (err.error || res.status));
+      return;
+    }
+    // Solo actualizar estado local si Supabase confirmó la eliminación
     setCompras((prev) => prev.filter((c) => c.id !== id));
     setConfirmEliminar(null);
     if (navigator.vibrate) navigator.vibrate(100);

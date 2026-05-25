@@ -73,16 +73,29 @@ export default function HomePage() {
   const cambiarEstado = async (id, estadoActual) => {
     const siguiente = estadoActual === 'en_preparacion' ? 'listo' : 'entregado';
     if (navigator.vibrate) navigator.vibrate(50);
+    // PRIMERO actualizar en Supabase via API route (usa service role key)
+    const res = await fetch('/api/pedidos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, estado: siguiente }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Error al actualizar estado: ' + (err.error || res.status));
+      return;
+    }
+    // Solo actualizar estado local si Supabase confirmó el cambio
     setPedidos((prev) => prev.map((p) => p.id === id ? { ...p, estado: siguiente } : p));
-    await supabase.from('pedidos').update({ estado: siguiente }).eq('id', id);
   };
- 
+
   const eliminarPedido = async (id) => {
-    // Primero eliminar en Supabase, luego actualizar estado local
-    const { error: errItems } = await supabase.from('pedido_items').delete().eq('pedido_id', id);
-    if (errItems) { alert('Error al eliminar items. Intenta de nuevo.'); return; }
-    const { error: errPedido } = await supabase.from('pedidos').delete().eq('id', id);
-    if (errPedido) { alert('Error al eliminar pedido. Intenta de nuevo.'); return; }
+    // Eliminar via API route (usa service role key — items + pedido en orden correcto)
+    const res = await fetch(`/api/pedidos?id=${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Error al eliminar: ' + (err.error || res.status));
+      return;
+    }
     // Solo actualizar estado local si Supabase confirmó la eliminación
     setPedidos((prev) => prev.filter((p) => p.id !== id));
     setConfirmEliminar(null);
