@@ -77,14 +77,13 @@ export default function InsumosPage() {
   };
 
   const eliminarCompra = async (id) => {
-    // Eliminar via API route (usa service role key)
-    const res = await fetch(`/api/insumos?id=${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert('Error al eliminar: ' + (err.error || res.status));
-      return;
-    }
-    // Solo actualizar estado local si Supabase confirmó la eliminación
+    // Directo a Supabase — RLS deshabilitado, GRANT DELETE aplicado al rol anon
+    const { error } = await supabase
+      .from('compras_insumos')
+      .delete()
+      .eq('id', id);
+    if (error) { alert('Error al eliminar: ' + error.message); return; }
+    // Solo actualizar UI si Supabase confirmó
     setCompras((prev) => prev.filter((c) => c.id !== id));
     setConfirmEliminar(null);
     if (navigator.vibrate) navigator.vibrate(100);

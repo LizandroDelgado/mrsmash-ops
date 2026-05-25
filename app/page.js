@@ -73,30 +73,29 @@ export default function HomePage() {
   const cambiarEstado = async (id, estadoActual) => {
     const siguiente = estadoActual === 'en_preparacion' ? 'listo' : 'entregado';
     if (navigator.vibrate) navigator.vibrate(50);
-    // PRIMERO actualizar en Supabase via API route (usa service role key)
-    const res = await fetch('/api/pedidos', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, estado: siguiente }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert('Error al actualizar estado: ' + (err.error || res.status));
-      return;
-    }
-    // Solo actualizar estado local si Supabase confirmó el cambio
+    // Directo a Supabase — RLS deshabilitado, GRANT UPDATE aplicado al rol anon
+    const { error } = await supabase
+      .from('pedidos')
+      .update({ estado: siguiente })
+      .eq('id', id);
+    if (error) { alert('Error al actualizar estado: ' + error.message); return; }
+    // Solo actualizar UI si Supabase confirmó
     setPedidos((prev) => prev.map((p) => p.id === id ? { ...p, estado: siguiente } : p));
   };
 
   const eliminarPedido = async (id) => {
-    // Eliminar via API route (usa service role key — items + pedido en orden correcto)
-    const res = await fetch(`/api/pedidos?id=${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert('Error al eliminar: ' + (err.error || res.status));
-      return;
-    }
-    // Solo actualizar estado local si Supabase confirmó la eliminación
+    // Directo a Supabase — primero items (FK), luego pedido
+    const { error: errItems } = await supabase
+      .from('pedido_items')
+      .delete()
+      .eq('pedido_id', id);
+    if (errItems) { alert('Error al eliminar items: ' + errItems.message); return; }
+    const { error: errPedido } = await supabase
+      .from('pedidos')
+      .delete()
+      .eq('id', id);
+    if (errPedido) { alert('Error al eliminar pedido: ' + errPedido.message); return; }
+    // Solo actualizar UI si Supabase confirmó
     setPedidos((prev) => prev.filter((p) => p.id !== id));
     setConfirmEliminar(null);
     if (navigator.vibrate) navigator.vibrate(100);
