@@ -79,17 +79,17 @@ export default function FinanzasPage() {
     setLoading(true);
     const { inicio, fin } = getRango();
 
-    // Todos los pedidos entregados del periodo (todos los canales)
+    // Todos los pedidos entregados del periodo (todos los canales: whatsapp, local, didi, etc.)
     const { data: pedidosEntregados } = await supabase
       .from('pedidos')
-      .select('total, canal, pedido_items(cantidad)')
+      .select('total, pedido_items(cantidad)')
       .eq('negocio_id', nid)
       .eq('estado', 'entregado')
       .gte('fecha', inicio)
       .lte('fecha', fin);
 
     // Importaciones Didi del periodo (carga masiva desde Excel)
-    const { data: pedidosDidi } = await supabase
+    const { data: importDidi } = await supabase
       .from('importaciones_didi')
       .select('venta_bruta, comision_didi, costo_promos, ganancia_neta')
       .eq('negocio_id', nid)
@@ -105,26 +105,30 @@ export default function FinanzasPage() {
       .lte('fecha', fin);
 
     // Calcular totales
-    const ventasTodos = (pedidosEntregados || []).reduce((s, p) => s + (p.total || 0), 0);
-    const ventasDidi = (pedidosDidi || []).reduce((s, p) => s + (p.venta_bruta || 0), 0);
-    const gananciaNetaDidi = (pedidosDidi || []).reduce((s, p) => s + (p.ganancia_neta || 0), 0);
-    const comisionDidi = (pedidosDidi || []).reduce((s, p) => s + (p.comision_didi || 0), 0);
-    const totalInsumos = (insumos || []).reduce((s, i) => s + i.monto, 0);
+    const ventasPedidos     = (pedidosEntregados || []).reduce((s, p) => s + (p.total || 0), 0);
+    const ventasBrutasDidi  = (importDidi || []).reduce((s, d) => s + (d.venta_bruta  || 0), 0);
+    const comisionDidi      = (importDidi || []).reduce((s, d) => s + (d.comision_didi || 0), 0);
+    const costoPromosDidi   = (importDidi || []).reduce((s, d) => s + (d.costo_promos  || 0), 0);
+    const totalInsumos      = (insumos || []).reduce((s, i) => s + i.monto, 0);
 
-    const ventas_brutas = ventasTodos + ventasDidi;
-    const ganancia_real = ventasTodos + gananciaNetaDidi - totalInsumos;
+    // ventas_brutas = pedidos entregados (todos los canales) + venta_bruta de importaciones Didi
+    const ventas_brutas = ventasPedidos + ventasBrutasDidi;
 
-    const burgersTodos = (pedidosEntregados || []).reduce(
+    // ganancia_real = ventas_brutas - insumos - comisión Didi - promos Didi
+    const ganancia_real = ventas_brutas - totalInsumos - comisionDidi - costoPromosDidi;
+
+    const burgersPedidos = (pedidosEntregados || []).reduce(
       (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0),
       0
     );
-    const burgersDidi = (pedidosDidi || []).length;
-    const total_burgers = burgersTodos + burgersDidi;
+    const burgersDidi  = (importDidi || []).length; // cada fila de importación ≈ un lote
+    const total_burgers = burgersPedidos + burgersDidi;
 
     setDatos({
       ventas_brutas,
-      total_insumos: totalInsumos,
-      comision_didi: comisionDidi,
+      total_insumos:      totalInsumos,
+      comision_didi:      comisionDidi,
+      costo_promos_didi:  costoPromosDidi,
       ganancia_real,
       total_burgers,
       punto_equilibrio: calcularPuntoEquilibrio(totalInsumos, GANANCIA_PROMEDIO_BURGER),
@@ -280,14 +284,15 @@ export default function FinanzasPage() {
             {/* Desglose */}
             <div className="rounded-2xl overflow-hidden" style={{ background: '#141414' }}>
               {[
-                { label: 'Ventas brutas', value: datos.ventas_brutas, color: '#fff' },
-                { label: '− Insumos', value: -datos.total_insumos, color: '#ef4444' },
-                { label: '− Comisión Didi', value: -datos.comision_didi, color: '#f97316' },
-              ].map(({ label, value, color }, i) => (
+                { label: 'Ventas brutas',         value:  datos.ventas_brutas,       color: '#fff'     },
+                { label: '− Insumos',              value: -datos.total_insumos,       color: '#ef4444'  },
+                { label: '− Comisión Didi',        value: -datos.comision_didi,       color: '#f97316'  },
+                { label: '− Promos Didi',          value: -datos.costo_promos_didi,   color: '#f97316'  },
+              ].map(({ label, value, color }, i, arr) => (
                 <div
                   key={label}
                   className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: i < 2 ? '1px solid #1e1e1e' : 'none' }}
+                  style={{ borderBottom: i < arr.length - 1 ? '1px solid #1e1e1e' : 'none' }}
                 >
                   <span style={{ color: '#aaa', fontSize: 14 }}>{label}</span>
                   <span style={{ color, fontWeight: 'bold' }}>{formatMXN(value)}</span>
