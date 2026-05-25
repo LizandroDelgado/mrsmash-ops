@@ -5,12 +5,10 @@ import { ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 
-function parsearVoz(texto, productos, canal) {
+function parsearVoz(texto, productos) {
   const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const nuevasCantidades = {};
-  const numeros = {
-    'un ': 1, 'una ': 1, 'dos ': 2, 'tres ': 3, 'cuatro ': 4, 'cinco ': 5,
-  };
+  const numeros = { 'un ': 1, 'una ': 1, 'dos ': 2, 'tres ': 3, 'cuatro ': 4, 'cinco ': 5 };
   const aliases = {
     'doble bacon smash': 'Doble Bacon Smash',
     'bacos double smash': 'Doble Bacon Smash',
@@ -30,8 +28,7 @@ function parsearVoz(texto, productos, canal) {
   for (const alias of aliasesOrdenados) {
     const idx = textoRestante.indexOf(alias);
     if (idx === -1) continue;
-    const nombreProducto = aliases[alias];
-    const producto = productos.find(p => p.nombre === nombreProducto);
+    const producto = productos.find((p) => p.nombre === aliases[alias]);
     if (!producto) continue;
     let cantidad = 1;
     const textoAntes = textoRestante.substring(0, idx);
@@ -50,8 +47,8 @@ function parsearVoz(texto, productos, canal) {
 }
 
 function getPrecio(producto, canal) {
-  if (canal === 'didi') return producto.precio_didi || producto.precio_venta;
-  if (canal === 'whatsapp') return producto.precio_whatsapp || producto.precio_venta;
+  if (canal === 'didi')      return producto.precio_didi     || producto.precio_venta;
+  if (canal === 'whatsapp')  return producto.precio_whatsapp || producto.precio_venta;
   return producto.precio_whatsapp || producto.precio_venta;
 }
 
@@ -60,25 +57,29 @@ function getPrecioNeto(producto, canal) {
   return getPrecio(producto, canal);
 }
 
-// Promo Martes-Jueves: Smash Sencilla a $99
-const PRECIO_PROMO = 99;
-const DIA_HOY = new Date().getDay(); // 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue
-const ES_DIA_PROMO = DIA_HOY >= 2 && DIA_HOY <= 4;
+// Promo Martes-Jueves
+const PRECIO_PROMO  = 99;
+const DIA_HOY       = new Date().getDay();
+const ES_DIA_PROMO  = DIA_HOY >= 2 && DIA_HOY <= 4;
 
 export default function NuevoPedidoPage() {
   const router = useRouter();
-  const [productos, setProductos] = useState([]);
-  const [cantidades, setCantidades] = useState({});
-  const [cliente, setCliente] = useState('');
-  const [canal, setCanal] = useState('whatsapp');
-  const [notas, setNotas] = useState('');
-  const [guardando, setGuardando] = useState(false);
-  const [escuchando, setEscuchando] = useState(false);
-  const [textoVoz, setTextoVoz] = useState('');
-  const [vozEstado, setVozEstado] = useState('');
-  // Promo: activa por defecto si es día de promo
-  const [promoActiva, setPromoActiva] = useState(ES_DIA_PROMO);
+  const [productos,          setProductos]          = useState([]);
+  const [cantidades,         setCantidades]         = useState({});
+  const [cliente,            setCliente]            = useState('');
+  const [canal,              setCanal]              = useState('whatsapp');
+  const [notas,              setNotas]              = useState('');
+  const [guardando,          setGuardando]          = useState(false);
+  const [escuchando,         setEscuchando]         = useState(false);
+  const [textoVoz,           setTextoVoz]           = useState('');
+  const [vozEstado,          setVozEstado]          = useState('');
+  const [promoActiva,        setPromoActiva]        = useState(ES_DIA_PROMO);
+  // Fecha del pedido
+  const [fechaOpt,           setFechaOpt]           = useState('hoy');
+  const [fechaPersonalizada, setFechaPersonalizada] = useState('');
   const recognitionRef = useRef(null);
+
+  const hoyStr = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     supabase.from('productos').select('*').eq('disponible', true).order('orden')
@@ -92,17 +93,20 @@ export default function NuevoPedidoPage() {
       });
   }, []);
 
-  // Precio final aplicando promo si corresponde
   const getPrecioFinal = (producto, canalActual) => {
-    if (
-      promoActiva &&
-      ES_DIA_PROMO &&
-      producto.nombre === 'Smash Sencilla' &&
-      canalActual !== 'didi'
-    ) {
+    if (promoActiva && ES_DIA_PROMO && producto.nombre === 'Smash Sencilla' && canalActual !== 'didi') {
       return PRECIO_PROMO;
     }
     return getPrecio(producto, canalActual);
+  };
+
+  const getFechaFinal = () => {
+    if (fechaOpt === 'hoy')  return hoyStr;
+    if (fechaOpt === 'ayer') {
+      const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
+      return ayer.toISOString().split('T')[0];
+    }
+    return fechaPersonalizada || hoyStr;
   };
 
   const iniciarVoz = () => {
@@ -113,60 +117,63 @@ export default function NuevoPedidoPage() {
     recognition.continuous = false;
     recognition.interimResults = false;
     recognitionRef.current = recognition;
-    recognition.onstart = () => { setEscuchando(true); setVozEstado('escuchando'); setTextoVoz(''); if (navigator.vibrate) navigator.vibrate(100); };
+    recognition.onstart  = () => { setEscuchando(true); setVozEstado('escuchando'); setTextoVoz(''); if (navigator.vibrate) navigator.vibrate(100); };
     recognition.onresult = (event) => {
       const texto = event.results[0][0].transcript;
       setTextoVoz(texto);
       setVozEstado('procesando');
-      const nuevasCantidades = parsearVoz(texto, productos, canal);
-      if (Object.keys(nuevasCantidades).length > 0) {
-        setCantidades(prev => { const u = { ...prev }; for (const [id, c] of Object.entries(nuevasCantidades)) u[id] = c; return u; });
+      const nuevas = parsearVoz(texto, productos);
+      if (Object.keys(nuevas).length > 0) {
+        setCantidades((prev) => { const u = { ...prev }; for (const [id, c] of Object.entries(nuevas)) u[id] = c; return u; });
         setVozEstado('listo');
         if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
       } else { setVozEstado('error'); }
     };
     recognition.onerror = () => { setVozEstado('error'); setEscuchando(false); };
-    recognition.onend = () => setEscuchando(false);
+    recognition.onend   = () => setEscuchando(false);
     recognition.start();
   };
 
-  const detenerVoz = () => { recognitionRef.current?.stop(); setEscuchando(false); };
-  const incrementar = (id) => setCantidades((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-  const decrementar = (id) => setCantidades((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) - 1) }));
+  const detenerVoz   = () => { recognitionRef.current?.stop(); setEscuchando(false); };
+  const incrementar  = (id) => setCantidades((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
+  const decrementar  = (id) => setCantidades((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) - 1) }));
 
-  const total = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioFinal(p, canal), 0);
-  const totalNeto = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioNeto(p, canal), 0);
+  const total            = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioFinal(p, canal), 0);
+  const totalNeto        = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioNeto(p, canal), 0);
   const itemsSeleccionados = productos.filter((p) => (cantidades[p.id] || 0) > 0);
 
   const guardar = async () => {
     if (itemsSeleccionados.length === 0) return;
+    if (fechaOpt === 'otra' && !fechaPersonalizada) return;
     setGuardando(true);
     if (navigator.vibrate) navigator.vibrate(50);
     try {
-      const ahora = new Date();
-      const hora = ahora.toTimeString().slice(0, 8);
-      const fecha = ahora.toISOString().split('T')[0];
+      const ahora      = new Date();
+      const hora       = ahora.toTimeString().slice(0, 8);
+      const fecha      = getFechaFinal();
       const negocio_id = productos[0]?.negocio_id;
+
       const { data: pedido, error: pedidoError } = await supabase
         .from('pedidos').insert({
           negocio_id, canal,
           cliente_nombre: cliente || null,
-          notas: notas || null,
-          estado: 'en_preparacion',
-          total: canal === 'didi' ? totalNeto : total,
+          notas:          notas   || null,
+          estado:         'en_preparacion',
+          total:          canal === 'didi' ? totalNeto : total,
           fecha, hora,
         }).select().single();
       if (pedidoError) throw pedidoError;
+
       const items = itemsSeleccionados.map((p) => ({
-        pedido_id: pedido.id,
+        pedido_id:   pedido.id,
         producto_id: p.id,
-        cantidad: cantidades[p.id],
-        precio: getPrecioFinal(p, canal),
-        costo: p.costo_insumos,
+        cantidad:    cantidades[p.id],
+        precio:      getPrecioFinal(p, canal),
+        costo:       p.costo_insumos,
       }));
-      // Verificar errores en la inserción de items
       const { error: itemsError } = await supabase.from('pedido_items').insert(items);
       if (itemsError) throw itemsError;
+
       router.push('/');
     } catch (err) {
       console.error(err);
@@ -175,17 +182,21 @@ export default function NuevoPedidoPage() {
   };
 
   const vozColor = { escuchando: '#FF4D00', procesando: '#eab308', listo: '#22c55e', error: '#ef4444' }[vozEstado] || '#888';
-  const vozMsg = { escuchando: '🎤 Escuchando...', procesando: '⚙️ Procesando...', listo: '✓ ' + textoVoz, error: '✗ No entendí. Intenta de nuevo.' }[vozEstado] || '';
+  const vozMsg   = { escuchando: '🎤 Escuchando...', procesando: '⚙️ Procesando...', listo: '✓ ' + textoVoz, error: '✗ No entendí. Intenta de nuevo.' }[vozEstado] || '';
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
-      <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3" style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
-        <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg"><ArrowLeft size={22} /></button>
+      <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
+        style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
+        <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg">
+          <ArrowLeft size={22} />
+        </button>
         <h1 className="font-bold text-lg">Nuevo pedido</h1>
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-40 space-y-6">
-        {/* Canal primero — afecta precios */}
+
+        {/* ── CANAL ── */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>CANAL</p>
           <div className="flex gap-2">
@@ -203,7 +214,7 @@ export default function NuevoPedidoPage() {
           )}
         </section>
 
-        {/* Productos */}
+        {/* ── PRODUCTOS ── */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold tracking-wider" style={{ color: '#FF4D00' }}>¿QUÉ PIDIERON?</p>
@@ -223,17 +234,11 @@ export default function NuevoPedidoPage() {
                 <p className="text-sm font-bold" style={{ color: promoActiva ? '#FF4D00' : '#888' }}>
                   🏷️ Promo Mar–Jue
                 </p>
-                <p className="text-xs mt-0.5" style={{ color: '#666' }}>
-                  Smash Sencilla a $99
-                </p>
+                <p className="text-xs mt-0.5" style={{ color: '#666' }}>Smash Sencilla a $99</p>
               </div>
-              <button
-                onClick={() => setPromoActiva((prev) => !prev)}
+              <button onClick={() => setPromoActiva((p) => !p)}
                 className="px-4 py-2 rounded-xl font-bold text-sm"
-                style={{
-                  background: promoActiva ? '#FF4D00' : '#2a2a2a',
-                  color: promoActiva ? '#fff' : '#888',
-                }}>
+                style={{ background: promoActiva ? '#FF4D00' : '#2a2a2a', color: promoActiva ? '#fff' : '#888' }}>
                 {promoActiva ? 'Activa' : 'Inactiva'}
               </button>
             </div>
@@ -245,23 +250,24 @@ export default function NuevoPedidoPage() {
               {vozMsg}
             </div>
           )}
+
           <div className="space-y-2">
             {productos.map((p) => {
-              const precio = getPrecioFinal(p, canal);
+              const precio         = getPrecioFinal(p, canal);
               const precioOriginal = getPrecio(p, canal);
-              const precioNeto = getPrecioNeto(p, canal);
-              const cant = cantidades[p.id] || 0;
-              const esProductoPromo = promoActiva && ES_DIA_PROMO && p.nombre === 'Smash Sencilla' && canal !== 'didi';
+              const precioNeto     = getPrecioNeto(p, canal);
+              const cant           = cantidades[p.id] || 0;
+              const esPromo        = promoActiva && ES_DIA_PROMO && p.nombre === 'Smash Sencilla' && canal !== 'didi';
               return (
                 <div key={p.id} className="flex items-center justify-between p-4 rounded-2xl"
                   style={{ background: cant > 0 ? '#1a1a0a' : '#141414', border: `1px solid ${cant > 0 ? '#FF4D0044' : 'transparent'}` }}>
                   <div>
                     <p className="font-bold text-white">{p.nombre}</p>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold" style={{ color: esProductoPromo ? '#FF4D00' : '#888' }}>
+                      <p className="text-sm font-bold" style={{ color: esPromo ? '#FF4D00' : '#888' }}>
                         {formatMXN(precio)}
                       </p>
-                      {esProductoPromo && precioOriginal !== precio && (
+                      {esPromo && precioOriginal !== precio && (
                         <p className="text-xs line-through" style={{ color: '#555' }}>
                           {formatMXN(precioOriginal)}
                         </p>
@@ -286,7 +292,7 @@ export default function NuevoPedidoPage() {
           </div>
         </section>
 
-        {/* Cliente */}
+        {/* ── CLIENTE ── */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>CLIENTE (OPCIONAL)</p>
           <input type="text" value={cliente} onChange={(e) => setCliente(e.target.value)}
@@ -295,7 +301,7 @@ export default function NuevoPedidoPage() {
             style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }} />
         </section>
 
-        {/* Notas */}
+        {/* ── NOTAS ── */}
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>NOTAS (OPCIONAL)</p>
           <input type="text" value={notas} onChange={(e) => setNotas(e.target.value)}
@@ -303,8 +309,42 @@ export default function NuevoPedidoPage() {
             className="w-full px-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none"
             style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }} />
         </section>
+
+        {/* ── FECHA DEL PEDIDO ── */}
+        <section>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>FECHA DEL PEDIDO</p>
+          <div className="flex gap-2">
+            {[
+              { key: 'hoy',  label: 'Hoy'  },
+              { key: 'ayer', label: 'Ayer' },
+              { key: 'otra', label: '📅 Otra' },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => setFechaOpt(key)}
+                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                style={{
+                  background: fechaOpt === key ? '#FF4D00' : '#141414',
+                  color:      fechaOpt === key ? '#fff'    : '#888',
+                  border:     `1px solid ${fechaOpt === key ? '#FF4D00' : '#2a2a2a'}`,
+                }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {fechaOpt === 'otra' && (
+            <input
+              type="date"
+              value={fechaPersonalizada}
+              max={hoyStr}
+              onChange={(e) => setFechaPersonalizada(e.target.value)}
+              className="mt-2 w-full px-4 py-3 rounded-xl text-white outline-none"
+              style={{ background: '#141414', border: '1px solid #FF4D00', fontSize: 16, colorScheme: 'dark' }}
+            />
+          )}
+        </section>
+
       </main>
 
+      {/* ── Footer fijo: total + botón guardar ── */}
       <div className="fixed bottom-0 left-0 right-0 px-4 pt-3"
         style={{ background: '#0a0a0a', borderTop: '1px solid #1e1e1e', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
         <div className="flex items-center justify-between mb-3">
@@ -316,9 +356,13 @@ export default function NuevoPedidoPage() {
           </div>
           <span className="text-2xl font-bold text-white">{formatMXN(canal === 'didi' ? totalNeto : total)}</span>
         </div>
-        <button onClick={guardar} disabled={itemsSeleccionados.length === 0 || guardando}
+        <button onClick={guardar}
+          disabled={itemsSeleccionados.length === 0 || guardando || (fechaOpt === 'otra' && !fechaPersonalizada)}
           className="w-full py-4 rounded-2xl font-bold text-lg"
-          style={{ background: itemsSeleccionados.length === 0 ? '#1e1e1e' : '#FF4D00', color: itemsSeleccionados.length === 0 ? '#444' : '#fff' }}>
+          style={{
+            background: (itemsSeleccionados.length === 0 || (fechaOpt === 'otra' && !fechaPersonalizada)) ? '#1e1e1e' : '#FF4D00',
+            color:      (itemsSeleccionados.length === 0 || (fechaOpt === 'otra' && !fechaPersonalizada)) ? '#444'    : '#fff',
+          }}>
           {guardando ? 'Guardando...' : 'REGISTRAR PEDIDO'}
         </button>
       </div>
