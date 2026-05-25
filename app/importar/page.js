@@ -51,13 +51,14 @@ export default function ImportarPage() {
         const data = await res.json();
 
         acum.push({
-          nombre:     file.name,
-          success:    !!data.success,
-          nuevos:     data.nuevos     ?? 0,
-          duplicados: data.duplicados ?? 0,
-          mensaje:    data.mensaje    ?? data.error ?? 'Sin respuesta',
-          errores:    data.errores,
-          resumen:    data.resumen,
+          nombre:              file.name,
+          success:             !!data.success,
+          nuevos:              data.nuevos     ?? 0,
+          duplicados:          data.duplicados ?? 0,
+          mensaje:             data.mensaje    ?? data.error ?? 'Sin respuesta',
+          errores:             data.errores,
+          resumen:             data.resumen,
+          columnasDisponibles: data.columnasDisponibles,
         });
       } catch {
         acum.push({
@@ -266,6 +267,11 @@ export default function ImportarPage() {
                       <p className="text-xs" style={{ color: r.success ? '#666' : '#ef4444' }}>
                         {r.mensaje}
                       </p>
+                      {!r.success && r.columnasDisponibles?.length > 0 && (
+                        <p className="text-xs mt-1 break-all" style={{ color: '#555' }}>
+                          Columnas: {r.columnasDisponibles.join(' · ')}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

@@ -16,12 +16,13 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No se recibió archivo' }, { status: 400 });
     }
 
-    const { pedidos, errores, resumen } = await parseDidiExcel(file, negocioId);
+    const { pedidos, errores, resumen, columnasDisponibles } = await parseDidiExcel(file, negocioId);
 
     if (pedidos.length === 0) {
       return NextResponse.json({
         success: false,
         mensaje: 'No se encontraron pedidos válidos en el archivo',
+        columnasDisponibles,   // ← para debug: ver qué columnas tiene el Excel
         errores,
         resumen,
       });
