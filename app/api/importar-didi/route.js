@@ -35,22 +35,40 @@ export async function POST(request) {
       });
     }
 
-    // Insertar en importaciones_didi
-    const { data: insertados, error: insertError } = await supabase
+    // Upsert en importaciones_didi — duplicados se ignoran silenciosamente.
+    // Requiere restricción UNIQUE (negocio_id, fecha, venta_bruta, metodo_pago) en la tabla.
+    const { data: insertados, error: upsertError } = await supabase
       .from('importaciones_didi')
-      .insert(pedidos)
+      .upsert(pedidos, {
+        onConflict: 'negocio_id,fecha,venta_bruta,metodo_pago',
+        ignoreDuplicates: true,
+      })
       .select();
 
-    if (insertError) {
+    if (upsertError) {
       return NextResponse.json({
         error: 'Error al guardar los pedidos',
-        detalle: insertError.message,
+        detalle: upsertError.message,
       }, { status: 500 });
+    }
+
+    const nuevos      = insertados?.length ?? 0;
+    const duplicados  = pedidos.length - nuevos;
+
+    let mensaje;
+    if (nuevos === 0) {
+      mensaje = `Todos los ${duplicados} registros ya existían (sin cambios)`;
+    } else if (duplicados > 0) {
+      mensaje = `${nuevos} registros nuevos importados · ${duplicados} duplicados ignorados`;
+    } else {
+      mensaje = `Se importaron ${nuevos} registros correctamente`;
     }
 
     return NextResponse.json({
       success: true,
-      mensaje: `Se importaron ${insertados.length} registros correctamente`,
+      mensaje,
+      nuevos,
+      duplicados,
       errores: errores.length > 0 ? errores : undefined,
       resumen,
     });

@@ -118,12 +118,35 @@ export default function ImportarPage() {
         {/* Resultado */}
         {estado === 'exito' && resultado && (
           <div className="rounded-2xl p-4" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <CheckCircle size={20} style={{ color: '#22c55e' }} />
               <span className="font-bold" style={{ color: '#22c55e' }}>
                 {resultado.mensaje}
               </span>
             </div>
+
+            {/* Desglose nuevos / duplicados */}
+            {(resultado.nuevos !== undefined || resultado.duplicados !== undefined) && (
+              <div className="flex gap-2 mb-3">
+                {resultado.nuevos > 0 && (
+                  <span
+                    className="px-3 py-1 rounded-full text-xs font-bold"
+                    style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}
+                  >
+                    ✓ {resultado.nuevos} nuevos
+                  </span>
+                )}
+                {resultado.duplicados > 0 && (
+                  <span
+                    className="px-3 py-1 rounded-full text-xs font-bold"
+                    style={{ background: 'rgba(234,179,8,0.15)', color: '#eab308' }}
+                  >
+                    ⊘ {resultado.duplicados} ya existían
+                  </span>
+                )}
+              </div>
+            )}
+
             {resultado.resumen && (
               <p className="text-sm" style={{ color: '#aaa' }}>
                 Periodo: {resultado.resumen.periodo_inicio} al {resultado.resumen.periodo_fin}
