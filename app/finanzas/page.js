@@ -79,16 +79,16 @@ export default function FinanzasPage() {
     setLoading(true);
     const { inicio, fin } = getRango();
 
-    // Pedidos WhatsApp del periodo
-    const { data: pedidosWA } = await supabase
+    // Todos los pedidos entregados del periodo (todos los canales)
+    const { data: pedidosEntregados } = await supabase
       .from('pedidos')
-      .select('total, pedido_items(cantidad, precio, costo)')
+      .select('total, canal, pedido_items(cantidad)')
       .eq('negocio_id', nid)
-      .eq('canal', 'whatsapp')
+      .eq('estado', 'entregado')
       .gte('fecha', inicio)
       .lte('fecha', fin);
 
-    // Importaciones Didi del periodo
+    // Importaciones Didi del periodo (carga masiva desde Excel)
     const { data: pedidosDidi } = await supabase
       .from('importaciones_didi')
       .select('venta_bruta, comision_didi, costo_promos, ganancia_neta')
@@ -105,21 +105,21 @@ export default function FinanzasPage() {
       .lte('fecha', fin);
 
     // Calcular totales
-    const ventasWA = (pedidosWA || []).reduce((s, p) => s + (p.total || 0), 0);
+    const ventasTodos = (pedidosEntregados || []).reduce((s, p) => s + (p.total || 0), 0);
     const ventasDidi = (pedidosDidi || []).reduce((s, p) => s + (p.venta_bruta || 0), 0);
     const gananciaNetaDidi = (pedidosDidi || []).reduce((s, p) => s + (p.ganancia_neta || 0), 0);
     const comisionDidi = (pedidosDidi || []).reduce((s, p) => s + (p.comision_didi || 0), 0);
     const totalInsumos = (insumos || []).reduce((s, i) => s + i.monto, 0);
 
-    const ventas_brutas = ventasWA + ventasDidi;
-    const ganancia_real = ventasWA + gananciaNetaDidi - totalInsumos;
+    const ventas_brutas = ventasTodos + ventasDidi;
+    const ganancia_real = ventasTodos + gananciaNetaDidi - totalInsumos;
 
-    const burgersWA = (pedidosWA || []).reduce(
+    const burgersTodos = (pedidosEntregados || []).reduce(
       (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0),
       0
     );
     const burgersDidi = (pedidosDidi || []).length;
-    const total_burgers = burgersWA + burgersDidi;
+    const total_burgers = burgersTodos + burgersDidi;
 
     setDatos({
       ventas_brutas,

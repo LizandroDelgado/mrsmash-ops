@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatHora } from '@/lib/calculos';
@@ -12,51 +12,107 @@ const ESTADOS = {
   entregado:      { label: 'ENTREGADO', color: '#555',    bg: 'transparent' },
 };
 
-const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const DIAS      = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-function formatFechaCorta(fechaStr) {
-  return new Date(fechaStr + 'T12:00:00').toLocaleDateString('es-MX', {
-    day: 'numeric', month: 'short',
-  });
+// ── Helpers de semana ──────────────────────────────────────────────────────
+function getSemanaRange(offset) {
+  const hoy = new Date();
+  const dow = hoy.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  const lunes = new Date(hoy);
+  lunes.setDate(hoy.getDate() + diff + offset * 7);
+  lunes.setHours(0, 0, 0, 0);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  return {
+    inicio: lunes.toISOString().split('T')[0],
+    fin:    domingo.toISOString().split('T')[0],
+    label:  `${lunes.getDate()} ${MESES_CORTO[lunes.getMonth()]} – ${domingo.getDate()} ${MESES_CORTO[domingo.getMonth()]}`,
+  };
 }
 
+function getDiasDeSemana(offset) {
+  const hoy    = new Date();
+  const hoyStr = hoy.toISOString().split('T')[0];
+  const dow    = hoy.getDay();
+  const diff   = dow === 0 ? -6 : 1 - dow;
+  const lunes  = new Date(hoy);
+  lunes.setDate(hoy.getDate() + diff + offset * 7);
+
+  const dias = [];
+  for (let i = 0; i <= 6; i++) {
+    const d       = new Date(lunes);
+    d.setDate(lunes.getDate() + i);
+    const fechaStr = d.toISOString().split('T')[0];
+    const esHoy    = fechaStr === hoyStr;
+    // Semana actual: solo hasta hoy. Semanas pasadas: los 7 días.
+    if (offset < 0 || d <= hoy) {
+      dias.push({ fecha: fechaStr, label: esHoy ? 'Hoy' : DIAS[d.getDay()], esHoy });
+    }
+  }
+  return dias;
+}
+
+function formatFechaCorta(fechaStr) {
+  return new Date(fechaStr + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+}
+// ──────────────────────────────────────────────────────────────────────────
+
 export default function HomePage() {
-  const [pedidos,          setPedidos]          = useState([]);
-  const [loading,          setLoading]          = useState(true);
-  const [refreshing,       setRefreshing]       = useState(false);
-  const [diaSeleccionado,  setDiaSeleccionado]  = useState(null); // null = hoy
-  const [pedidoExpandido,  setPedidoExpandido]  = useState(null);
-  const [confirmEliminar,  setConfirmEliminar]  = useState(null);
-  const [diasSemana,       setDiasSemana]       = useState([]);
+  const [pedidos,         setPedidos]         = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [refreshing,      setRefreshing]      = useState(false);
+  const [diaSeleccionado, setDiaSeleccionado] = useState(null);   // null = hoy
+  const [pedidoExpandido, setPedidoExpandido] = useState(null);
+  const [confirmEliminar, setConfirmEliminar] = useState(null);
+  const [diasSemana,      setDiasSemana]      = useState([]);
+  const [semanaOffset,    setSemanaOffset]    = useState(0);      // 0 = semana actual
+  const [resumenSemana,   setResumenSemana]   = useState(null);   // { totalPedidos, totalBurgers, totalIngresos }
 
   const hoyStr = new Date().toISOString().split('T')[0];
 
-  // Si diaSeleccionado no está en los tabs de la semana actual → chip especial
+  // Fecha efectiva para cargar pedidos del día
+  const fechaEfectiva = diaSeleccionado || hoyStr;
+
+  // Chip cuando la fecha seleccionada no está en la semana mostrada
   const diaFueraSemana = diaSeleccionado && !diasSemana.find((d) => d.fecha === diaSeleccionado);
 
-  // Generar días de la semana actual (lunes → hoy)
+  // ── Regenerar días y resumen al cambiar semanaOffset ─────────────────────
   useEffect(() => {
-    const hoy      = new Date();
-    const dow      = hoy.getDay();
-    const diff     = dow === 0 ? -6 : 1 - dow;
-    const lunes    = new Date(hoy);
-    lunes.setDate(hoy.getDate() + diff);
-
-    const dias = [];
-    for (let i = 0; i <= 6; i++) {
-      const d = new Date(lunes);
-      d.setDate(lunes.getDate() + i);
-      if (d <= hoy) {
-        dias.push({
-          fecha: d.toISOString().split('T')[0],
-          label: i === (dow === 0 ? 6 : dow - 1) ? 'Hoy' : DIAS[d.getDay()],
-          esHoy: d.toISOString().split('T')[0] === hoyStr,
-        });
-      }
-    }
+    const dias = getDiasDeSemana(semanaOffset);
     setDiasSemana(dias);
-  }, []);
 
+    // Día por defecto: hoy (sem. actual) o último día de la semana (historial)
+    if (semanaOffset === 0) {
+      setDiaSeleccionado(null);
+    } else {
+      setDiaSeleccionado(dias[dias.length - 1]?.fecha || null);
+    }
+
+    // Resumen de la semana
+    cargarResumenSemana(semanaOffset);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semanaOffset]);
+
+  const cargarResumenSemana = async (offset) => {
+    const { inicio, fin } = getSemanaRange(offset);
+    const { data } = await supabase
+      .from('pedidos')
+      .select('total, pedido_items(cantidad)')
+      .gte('fecha', inicio)
+      .lte('fecha', fin);
+    if (!data) return;
+    setResumenSemana({
+      totalPedidos:  data.length,
+      totalIngresos: data.reduce((s, p) => s + (p.total || 0), 0),
+      totalBurgers:  data.reduce(
+        (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0
+      ),
+    });
+  };
+
+  // ── Cargar pedidos del día ────────────────────────────────────────────────
   const cargarPedidos = useCallback(async (fecha) => {
     const fechaBuscar = fecha || hoyStr;
     const { data, error } = await supabase
@@ -64,7 +120,6 @@ export default function HomePage() {
       .select('*, pedido_items(cantidad, precio, productos(nombre))')
       .eq('fecha', fechaBuscar)
       .order('created_at', { ascending: false });
-
     if (!error && data) setPedidos(data);
     setLoading(false);
     setRefreshing(false);
@@ -72,15 +127,14 @@ export default function HomePage() {
 
   useEffect(() => {
     cargarPedidos(diaSeleccionado);
-
     const channel = supabase.channel('pedidos-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' },
         () => cargarPedidos(diaSeleccionado))
       .subscribe();
-
     return () => supabase.removeChannel(channel);
   }, [cargarPedidos, diaSeleccionado]);
 
+  // ── Acciones ─────────────────────────────────────────────────────────────
   const cambiarEstado = async (id, estadoActual) => {
     const siguiente = estadoActual === 'en_preparacion' ? 'listo' : 'entregado';
     if (navigator.vibrate) navigator.vibrate(50);
@@ -102,14 +156,18 @@ export default function HomePage() {
   const seleccionarFechaCalendario = (val) => {
     if (!val) return;
     const enSemana = diasSemana.find((d) => d.fecha === val);
-    if (enSemana?.esHoy) setDiaSeleccionado(null);   // activar tab "Hoy"
+    if (enSemana?.esHoy) setDiaSeleccionado(null);
     else                 setDiaSeleccionado(val);
     setLoading(true);
   };
 
+  // ── Cálculos del día ─────────────────────────────────────────────────────
   const totalDia     = pedidos.reduce((s, p) => s + (p.total || 0), 0);
-  const burgersTotal = pedidos.reduce((s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0);
+  const burgersTotal = pedidos.reduce(
+    (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0
+  );
   const fechaSeleccionada = diaSeleccionado || hoyStr;
+  const rango = getSemanaRange(semanaOffset);
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
@@ -138,8 +196,45 @@ export default function HomePage() {
         </div>
       </header>
 
+      {/* ── Navegador de semana ── */}
+      <div className="flex items-center justify-between px-3 py-2 mx-4 mt-3 rounded-xl"
+        style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
+        <button onClick={() => setSemanaOffset((o) => o - 1)}
+          className="p-2 rounded-lg" style={{ background: '#1e1e1e' }}>
+          <ChevronLeft size={18} style={{ color: '#aaa' }} />
+        </button>
+        <div className="text-center">
+          <p className="text-sm font-bold text-white">{rango.label}</p>
+          <p className="text-xs" style={{ color: semanaOffset === 0 ? '#FF4D00' : '#666' }}>
+            {semanaOffset === 0 ? 'Semana actual' : semanaOffset === -1 ? 'Semana pasada' : `Hace ${Math.abs(semanaOffset)} semanas`}
+          </p>
+        </div>
+        <button onClick={() => setSemanaOffset((o) => Math.min(0, o + 1))}
+          disabled={semanaOffset === 0}
+          className="p-2 rounded-lg"
+          style={{ background: '#1e1e1e', opacity: semanaOffset === 0 ? 0.3 : 1 }}>
+          <ChevronRight size={18} style={{ color: '#aaa' }} />
+        </button>
+      </div>
+
+      {/* ── Resumen de la semana ── */}
+      {resumenSemana && (
+        <div className="grid grid-cols-3 gap-2 px-4 pt-2">
+          {[
+            { label: 'Pedidos sem.', value: resumenSemana.totalPedidos },
+            { label: 'Burgers sem.', value: resumenSemana.totalBurgers },
+            { label: 'Ingresos sem.', value: formatMXN(resumenSemana.totalIngresos) },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-xl p-2 text-center" style={{ background: '#111' }}>
+              <p className="text-base font-bold" style={{ color: '#FF4D00' }}>{value}</p>
+              <p className="text-xs" style={{ color: '#555' }}>{label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ── Selector de días + botón calendario ── */}
-      <div className="flex gap-1 px-4 pt-3 pb-1 overflow-x-auto items-center">
+      <div className="flex gap-1 px-4 pt-2 pb-1 overflow-x-auto items-center">
         {diasSemana.map((d) => (
           <button key={d.fecha}
             onClick={() => { setDiaSeleccionado(d.esHoy ? null : d.fecha); setLoading(true); }}
@@ -152,7 +247,7 @@ export default function HomePage() {
           </button>
         ))}
 
-        {/* Chip para fecha fuera de la semana actual */}
+        {/* Chip: fecha fuera de la semana mostrada */}
         {diaFueraSemana && (
           <button
             onClick={() => { setDiaSeleccionado(null); setLoading(true); }}
@@ -163,31 +258,25 @@ export default function HomePage() {
           </button>
         )}
 
-        {/* Botón calendario — input invisible sobre icono */}
+        {/* Botón calendario */}
         <div className="flex-shrink-0 relative ml-auto">
-          <input
-            type="date"
-            max={hoyStr}
+          <input type="date" max={hoyStr}
             onChange={(e) => seleccionarFechaCalendario(e.target.value)}
-            style={{
-              opacity: 0, position: 'absolute', inset: 0,
-              width: '100%', height: '100%', cursor: 'pointer', zIndex: 1,
-            }}
+            style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer', zIndex: 1 }}
           />
-          <div
-            className="flex items-center justify-center px-3 py-2 rounded-xl"
+          <div className="flex items-center justify-center px-3 py-2 rounded-xl"
             style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
             <Calendar size={15} style={{ color: diaFueraSemana ? '#FF4D00' : '#888' }} />
           </div>
         </div>
       </div>
 
-      {/* ── KPIs ── */}
-      <div className="grid grid-cols-3 gap-2 px-4 pt-3 pb-2">
+      {/* ── KPIs del día ── */}
+      <div className="grid grid-cols-3 gap-2 px-4 pt-2 pb-2">
         {[
-          { label: 'Pedidos',  value: pedidos.length },
-          { label: 'Burgers',  value: burgersTotal },
-          { label: 'Ingresos', value: formatMXN(totalDia) },
+          { label: 'Pedidos hoy', value: pedidos.length },
+          { label: 'Burgers hoy', value: burgersTotal },
+          { label: 'Ingresos hoy', value: formatMXN(totalDia) },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl p-3 text-center" style={{ background: '#141414' }}>
             <p className="text-lg font-bold text-white">{value}</p>
@@ -196,31 +285,30 @@ export default function HomePage() {
         ))}
       </div>
 
-      {/* ── Lista de pedidos ── */}
-      <main className="flex-1 px-4 pb-32 pt-2">
+      {/* ── Lista de pedidos del día ── */}
+      <main className="flex-1 px-4 pb-32 pt-1">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 rounded-full border-2 animate-spin"
               style={{ borderColor: '#FF4D00', borderTopColor: 'transparent' }} />
           </div>
         ) : pedidos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
             <p className="text-4xl">🍔</p>
             <p className="font-bold text-white">Sin pedidos este día</p>
           </div>
         ) : (
-          <div className="space-y-3 mt-2">
+          <div className="space-y-3 mt-1">
             {pedidos.map((pedido) => {
-              const est         = ESTADOS[pedido.estado] || ESTADOS.en_preparacion;
-              const items       = pedido.pedido_items || [];
+              const est          = ESTADOS[pedido.estado] || ESTADOS.en_preparacion;
+              const items        = pedido.pedido_items || [];
               const resumenItems = items.map((i) => `${i.cantidad}x ${i.productos?.nombre || '?'}`).join(' · ');
-              const expandido   = pedidoExpandido === pedido.id;
+              const expandido    = pedidoExpandido === pedido.id;
 
               return (
                 <div key={pedido.id} className="rounded-2xl overflow-hidden"
                   style={{ background: '#141414', border: `1px solid ${est.color}22` }}>
 
-                  {/* Header tarjeta */}
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold tracking-wider px-2 py-0.5 rounded-full"
@@ -263,7 +351,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* Detalle expandido */}
                   {expandido && (
                     <div className="px-4 pb-4 pt-0" style={{ borderTop: '1px solid #1e1e1e' }}>
                       <div className="pt-3 space-y-2">
@@ -279,19 +366,14 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      {/* Botón eliminar */}
                       {confirmEliminar === pedido.id ? (
                         <div className="mt-3 flex gap-2">
                           <button onClick={() => setConfirmEliminar(null)}
                             className="flex-1 py-2 rounded-xl text-sm font-bold"
-                            style={{ background: '#1e1e1e', color: '#888' }}>
-                            Cancelar
-                          </button>
+                            style={{ background: '#1e1e1e', color: '#888' }}>Cancelar</button>
                           <button onClick={() => eliminarPedido(pedido.id)}
                             className="flex-1 py-2 rounded-xl text-sm font-bold"
-                            style={{ background: '#ef444422', color: '#ef4444' }}>
-                            Confirmar borrar
-                          </button>
+                            style={{ background: '#ef444422', color: '#ef4444' }}>Confirmar borrar</button>
                         </div>
                       ) : (
                         <button onClick={() => setConfirmEliminar(pedido.id)}
