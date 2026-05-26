@@ -176,7 +176,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3"
         style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
         <div>
-          <p className="text-xs font-bold tracking-widest" style={{ color: '#FF4D00' }}>MR. SMASH</p>
+          <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
           <p className="text-xs" style={{ color: '#555' }}>
             {new Date(fechaSeleccionada + 'T12:00:00').toLocaleDateString('es-MX', {
               weekday: 'long', day: 'numeric', month: 'short',

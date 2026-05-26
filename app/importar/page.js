@@ -102,7 +102,7 @@ export default function ImportarPage() {
         className="sticky top-0 z-40 px-4 py-3"
         style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}
       >
-        <h1 className="font-bold text-lg">Importar reporte Didi</h1>
+        <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
       </header>
 
       <main className="flex-1 px-4 pt-6 pb-32 space-y-6">

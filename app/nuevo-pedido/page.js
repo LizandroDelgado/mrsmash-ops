@@ -191,7 +191,7 @@ export default function NuevoPedidoPage() {
         <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg">
           <ArrowLeft size={22} />
         </button>
-        <h1 className="font-bold text-lg">Nuevo pedido</h1>
+        <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-40 space-y-6">
