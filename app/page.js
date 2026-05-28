@@ -69,6 +69,8 @@ export default function HomePage() {
   const [diasSemana,      setDiasSemana]      = useState([]);
   const [semanaOffset,    setSemanaOffset]    = useState(0);      // 0 = semana actual
   const [resumenSemana,   setResumenSemana]   = useState(null);   // { totalPedidos, totalBurgers, totalIngresos }
+  const [editandoFechaPedido, setEditandoFechaPedido] = useState(null);
+  const [nuevaFecha,          setNuevaFecha]          = useState('');
 
   const hoyStr = new Date().toISOString().split('T')[0];
 
@@ -151,6 +153,14 @@ export default function HomePage() {
     setPedidos((prev) => prev.filter((p) => p.id !== id));
     setConfirmEliminar(null);
     if (navigator.vibrate) navigator.vibrate(100);
+  };
+
+  const cambiarFechaPedido = async (id, fecha) => {
+    const { error } = await supabase.from('pedidos').update({ fecha }).eq('id', id);
+    if (error) { alert('Error al cambiar fecha: ' + error.message); return; }
+    setEditandoFechaPedido(null);
+    cargarPedidos(diaSeleccionado);
+    cargarResumenSemana(semanaOffset);
   };
 
   const seleccionarFechaCalendario = (val) => {
@@ -366,7 +376,31 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      {confirmEliminar === pedido.id ? (
+                      {editandoFechaPedido === pedido.id ? (
+                        <div className="mt-3 flex gap-2">
+                          <input
+                            type="date"
+                            value={nuevaFecha}
+                            max={hoyStr}
+                            onChange={(e) => setNuevaFecha(e.target.value)}
+                            className="flex-1 px-3 py-2 rounded-xl text-white outline-none text-sm"
+                            style={{ background: '#1e1e1e', border: '1px solid #FF4D00', colorScheme: 'dark' }}
+                          />
+                          <button
+                            onClick={() => nuevaFecha && cambiarFechaPedido(pedido.id, nuevaFecha)}
+                            disabled={!nuevaFecha}
+                            className="px-4 py-2 rounded-xl font-bold text-sm"
+                            style={{ background: nuevaFecha ? '#FF4D00' : '#2a2a2a', color: nuevaFecha ? '#fff' : '#555' }}>
+                            Guardar
+                          </button>
+                          <button
+                            onClick={() => setEditandoFechaPedido(null)}
+                            className="px-3 py-2 rounded-xl text-sm"
+                            style={{ background: '#1e1e1e', color: '#888' }}>
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : confirmEliminar === pedido.id ? (
                         <div className="mt-3 flex gap-2">
                           <button onClick={() => setConfirmEliminar(null)}
                             className="flex-1 py-2 rounded-xl text-sm font-bold"
@@ -376,11 +410,19 @@ export default function HomePage() {
                             style={{ background: '#ef444422', color: '#ef4444' }}>Confirmar borrar</button>
                         </div>
                       ) : (
-                        <button onClick={() => setConfirmEliminar(pedido.id)}
-                          className="mt-3 flex items-center gap-2 text-sm py-2 px-3 rounded-xl"
-                          style={{ color: '#ef4444', background: '#ef444411' }}>
-                          <Trash2 size={14} /> Eliminar pedido
-                        </button>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => { setEditandoFechaPedido(pedido.id); setNuevaFecha(pedido.fecha); }}
+                            className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-xl"
+                            style={{ color: '#888', background: '#1e1e1e' }}>
+                            ✏️ Cambiar fecha
+                          </button>
+                          <button onClick={() => setConfirmEliminar(pedido.id)}
+                            className="flex items-center gap-2 text-sm py-2 px-3 rounded-xl"
+                            style={{ color: '#ef4444', background: '#ef444411' }}>
+                            <Trash2 size={14} /> Eliminar
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}

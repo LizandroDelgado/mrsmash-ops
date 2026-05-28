@@ -45,6 +45,8 @@ export default function InsumosPage() {
   const [compras,            setCompras]            = useState([]);
   const [negocioId,          setNegocioId]          = useState(null);
   const [confirmEliminar,    setConfirmEliminar]    = useState(null);
+  const [editandoFechaInsumo, setEditandoFechaInsumo] = useState(null);
+  const [nuevaFechaInsumo,    setNuevaFechaInsumo]    = useState('');
   const [semanaOffset,       setSemanaOffset]       = useState(0);
   const [loadingCompras,     setLoadingCompras]     = useState(false);
 
@@ -102,6 +104,13 @@ export default function InsumosPage() {
       alert('Error al guardar: ' + error.message);
     }
     setGuardando(false);
+  };
+
+  const cambiarFechaInsumo = async (id, fecha) => {
+    const { error } = await supabase.from('compras_insumos').update({ fecha }).eq('id', id);
+    if (error) { alert('Error al cambiar fecha: ' + error.message); return; }
+    setEditandoFechaInsumo(null);
+    cargarCompras(negocioId, semanaOffset);
   };
 
   const eliminarCompra = async (id) => {
@@ -320,10 +329,17 @@ export default function InsumosPage() {
                             <p className="text-white text-sm font-medium truncate">{c.descripcion}</p>
                             <p className="text-xs mt-0.5" style={{ color: '#666' }}>{c.categoria}</p>
                           </div>
-                          <div className="flex items-center gap-3 ml-3">
+                          <div className="flex items-center gap-2 ml-3">
                             <span className="font-bold text-white">{formatMXN(c.monto)}</span>
                             <button
-                              onClick={() => setConfirmEliminar(confirmEliminar === c.id ? null : c.id)}
+                              onClick={() => { setEditandoFechaInsumo(editandoFechaInsumo === c.id ? null : c.id); setNuevaFechaInsumo(c.fecha); setConfirmEliminar(null); }}
+                              className="p-2 rounded-lg"
+                              style={{ background: editandoFechaInsumo === c.id ? '#FF4D0022' : '#1e1e1e' }}
+                            >
+                              <span style={{ fontSize: 13, color: editandoFechaInsumo === c.id ? '#FF4D00' : '#555' }}>✏️</span>
+                            </button>
+                            <button
+                              onClick={() => { setConfirmEliminar(confirmEliminar === c.id ? null : c.id); setEditandoFechaInsumo(null); }}
                               className="p-2 rounded-lg"
                               style={{ background: confirmEliminar === c.id ? '#ef444422' : '#1e1e1e' }}
                             >
@@ -331,6 +347,31 @@ export default function InsumosPage() {
                             </button>
                           </div>
                         </div>
+                        {editandoFechaInsumo === c.id && (
+                          <div className="flex gap-2 px-4 pb-3">
+                            <input
+                              type="date"
+                              value={nuevaFechaInsumo}
+                              max={hoyStr}
+                              onChange={(e) => setNuevaFechaInsumo(e.target.value)}
+                              className="flex-1 px-3 py-2 rounded-xl text-white outline-none text-sm"
+                              style={{ background: '#1e1e1e', border: '1px solid #FF4D00', colorScheme: 'dark' }}
+                            />
+                            <button
+                              onClick={() => nuevaFechaInsumo && cambiarFechaInsumo(c.id, nuevaFechaInsumo)}
+                              disabled={!nuevaFechaInsumo}
+                              className="px-4 py-2 rounded-xl font-bold text-sm"
+                              style={{ background: nuevaFechaInsumo ? '#FF4D00' : '#2a2a2a', color: nuevaFechaInsumo ? '#fff' : '#555' }}>
+                              Guardar
+                            </button>
+                            <button
+                              onClick={() => setEditandoFechaInsumo(null)}
+                              className="px-3 py-2 rounded-xl text-sm"
+                              style={{ background: '#1e1e1e', color: '#888' }}>
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
                         {confirmEliminar === c.id && (
                           <div className="flex gap-2 px-4 pb-3">
                             <button
