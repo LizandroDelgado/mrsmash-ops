@@ -10,6 +10,7 @@ function parsearVoz(texto, productos) {
   const nuevasCantidades = {};
   const numeros = { 'un ': 1, 'una ': 1, 'dos ': 2, 'tres ': 3, 'cuatro ': 4, 'cinco ': 5 };
   const aliases = {
+    // ── Hamburguesas ──────────────────────────────────────────────────────
     'doble bacon smash': 'Doble Bacon Smash',
     'bacos double smash': 'Doble Bacon Smash',
     'doble bacon': 'Doble Bacon Smash',
@@ -22,6 +23,21 @@ function parsearVoz(texto, productos) {
     'smash sencilla': 'Smash Sencilla',
     'sencilla': 'Smash Sencilla',
     'smash': 'Smash Sencilla',
+    // ── Malteadas ─────────────────────────────────────────────────────────
+    'malteada vainilla': 'Malteada Vainilla',
+    'vainilla': 'Malteada Vainilla',
+    'malteada fresa': 'Malteada Fresa',
+    'fresa': 'Malteada Fresa',
+    'malteada chocolate': 'Malteada Chocolate',
+    'chocolate': 'Malteada Chocolate',
+    // ── Papas ─────────────────────────────────────────────────────────────
+    'papas smash': 'Papas Smash',
+    'papas a la francesa': 'Papas a la francesa',
+    'papas francesas': 'Papas a la francesa',
+    'papas': 'Papas a la francesa',
+    // ── Bebidas ───────────────────────────────────────────────────────────
+    'refresco': 'Refresco',
+    'soda': 'Refresco',
   };
   const aliasesOrdenados = Object.keys(aliases).sort((a, b) => b.length - a.length);
   let textoRestante = ' ' + t + ' ';
