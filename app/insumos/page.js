@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
-import { formatMXN } from '@/lib/calculos';
+import { formatMXN, getFechaOperativa } from '@/lib/calculos';
 
 const CATEGORIAS = ['Carne', 'Pan', 'Verdura', 'Salsas', 'Empaque', 'Otro'];
 
@@ -75,10 +75,9 @@ export default function InsumosPage() {
   };
 
   const getFecha = () => {
-    const hoy = new Date();
-    if (fechaOpt === 'hoy')  return hoy.toISOString().split('T')[0];
-    if (fechaOpt === 'ayer') { hoy.setDate(hoy.getDate() - 1); return hoy.toISOString().split('T')[0]; }
-    return fechaPersonalizada || hoy.toISOString().split('T')[0];
+    if (fechaOpt === 'hoy')  return getFechaOperativa();
+    if (fechaOpt === 'ayer') { const a = new Date(); a.setDate(a.getDate() - 1); return a.toISOString().split('T')[0]; }
+    return fechaPersonalizada || getFechaOperativa();
   };
 
   const canSave = descripcion.trim() && monto && (fechaOpt !== 'otra' || fechaPersonalizada);

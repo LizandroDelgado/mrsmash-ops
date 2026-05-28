@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
-import { formatMXN } from '@/lib/calculos';
+import { formatMXN, getFechaOperativa } from '@/lib/calculos';
 
 function parsearVoz(texto, productos) {
   const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -95,7 +95,15 @@ export default function NuevoPedidoPage() {
   const [fechaPersonalizada, setFechaPersonalizada] = useState('');
   const recognitionRef = useRef(null);
 
-  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyStr         = new Date().toISOString().split('T')[0];
+  const fechaOperativa = getFechaOperativa();
+  const esMadrugada    = (() => { const a = new Date(); return a.getHours() * 60 + a.getMinutes() <= 180; })();
+  const avisoFechaText = (() => {
+    const d = new Date(fechaOperativa + 'T12:00:00');
+    const dias  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    return `${dias[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
+  })();
 
   useEffect(() => {
     supabase.from('productos').select('*').eq('disponible', true).order('orden')
@@ -117,12 +125,12 @@ export default function NuevoPedidoPage() {
   };
 
   const getFechaFinal = () => {
-    if (fechaOpt === 'hoy')  return hoyStr;
+    if (fechaOpt === 'hoy')  return fechaOperativa;
     if (fechaOpt === 'ayer') {
       const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
       return ayer.toISOString().split('T')[0];
     }
-    return fechaPersonalizada || hoyStr;
+    return fechaPersonalizada || fechaOperativa;
   };
 
   const iniciarVoz = () => {
@@ -355,6 +363,11 @@ export default function NuevoPedidoPage() {
               className="mt-2 w-full px-4 py-3 rounded-xl text-white outline-none"
               style={{ background: '#141414', border: '1px solid #FF4D00', fontSize: 16, colorScheme: 'dark' }}
             />
+          )}
+          {esMadrugada && fechaOpt === 'hoy' && (
+            <p className="text-xs mt-2 px-1" style={{ color: '#FF4D00' }}>
+              📅 Se registrará para el {avisoFechaText}
+            </p>
           )}
         </section>
 
