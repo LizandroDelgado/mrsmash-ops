@@ -106,9 +106,9 @@ export default function HomePage() {
       .lte('fecha', fin);
     if (!data) return;
     setResumenSemana({
-      totalPedidos:  data.length,
-      totalIngresos: data.reduce((s, p) => s + (p.total || 0), 0),
-      totalBurgers:  data.reduce(
+      totalPedidos:   data.length,
+      totalIngresos:  data.reduce((s, p) => s + (p.total || 0), 0),
+      totalProductos: data.reduce(
         (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0
       ),
     });
@@ -172,8 +172,8 @@ export default function HomePage() {
   };
 
   // ── Cálculos del día ─────────────────────────────────────────────────────
-  const totalDia     = pedidos.reduce((s, p) => s + (p.total || 0), 0);
-  const burgersTotal = pedidos.reduce(
+  const totalDia       = pedidos.reduce((s, p) => s + (p.total || 0), 0);
+  const totalProductos = pedidos.reduce(
     (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0
   );
   const fechaSeleccionada = diaSeleccionado || hoyStr;
@@ -231,8 +231,8 @@ export default function HomePage() {
       {resumenSemana && (
         <div className="grid grid-cols-3 gap-2 px-4 pt-2">
           {[
-            { label: 'Pedidos sem.', value: resumenSemana.totalPedidos },
-            { label: 'Burgers sem.', value: resumenSemana.totalBurgers },
+            { label: 'Pedidos sem.',   value: resumenSemana.totalPedidos   },
+            { label: 'Productos sem.', value: resumenSemana.totalProductos },
             { label: 'Ingresos sem.', value: formatMXN(resumenSemana.totalIngresos) },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-xl p-2 text-center" style={{ background: '#111' }}>
@@ -284,9 +284,9 @@ export default function HomePage() {
       {/* ── KPIs del día ── */}
       <div className="grid grid-cols-3 gap-2 px-4 pt-2 pb-2">
         {[
-          { label: 'Pedidos hoy', value: pedidos.length },
-          { label: 'Burgers hoy', value: burgersTotal },
-          { label: 'Ingresos hoy', value: formatMXN(totalDia) },
+          { label: 'Pedidos hoy',   value: pedidos.length  },
+          { label: 'Productos hoy', value: totalProductos  },
+          { label: 'Ingresos hoy',  value: formatMXN(totalDia) },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl p-3 text-center" style={{ background: '#141414' }}>
             <p className="text-lg font-bold text-white">{value}</p>
