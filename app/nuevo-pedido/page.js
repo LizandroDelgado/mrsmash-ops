@@ -20,6 +20,10 @@ function parsearVoz(texto, productos) {
     'doble': 'Doble Smash',
     'bacon smash': 'Bacon Smash',
     'bacon': 'Bacon Smash',
+    'smash sencilla promo': 'Smash Sencilla Promo',
+    'sencilla promo': 'Smash Sencilla Promo',
+    'smash promo': 'Smash Sencilla Promo',
+    'promo': 'Smash Sencilla Promo',
     'smash sencilla': 'Smash Sencilla',
     'sencilla': 'Smash Sencilla',
     'smash': 'Smash Sencilla',
@@ -73,11 +77,6 @@ function getPrecioNeto(producto, canal) {
   return getPrecio(producto, canal);
 }
 
-// Promo Martes-Jueves
-const PRECIO_PROMO  = 99;
-const DIA_HOY       = new Date().getDay();
-const ES_DIA_PROMO  = DIA_HOY >= 2 && DIA_HOY <= 4;
-
 export default function NuevoPedidoPage() {
   const router = useRouter();
   const [productos,          setProductos]          = useState([]);
@@ -89,7 +88,6 @@ export default function NuevoPedidoPage() {
   const [escuchando,         setEscuchando]         = useState(false);
   const [textoVoz,           setTextoVoz]           = useState('');
   const [vozEstado,          setVozEstado]          = useState('');
-  const [promoActiva,        setPromoActiva]        = useState(ES_DIA_PROMO);
   // Fecha del pedido
   const [fechaOpt,           setFechaOpt]           = useState('hoy');
   const [fechaPersonalizada, setFechaPersonalizada] = useState('');
@@ -116,13 +114,6 @@ export default function NuevoPedidoPage() {
         }
       });
   }, []);
-
-  const getPrecioFinal = (producto, canalActual) => {
-    if (promoActiva && ES_DIA_PROMO && producto.nombre === 'Smash Sencilla' && canalActual !== 'didi') {
-      return PRECIO_PROMO;
-    }
-    return getPrecio(producto, canalActual);
-  };
 
   const getFechaFinal = () => {
     if (fechaOpt === 'hoy')  return fechaOperativa;
@@ -162,8 +153,8 @@ export default function NuevoPedidoPage() {
   const incrementar  = (id) => setCantidades((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
   const decrementar  = (id) => setCantidades((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) - 1) }));
 
-  const total            = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioFinal(p, canal), 0);
-  const totalNeto        = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioNeto(p, canal), 0);
+  const total             = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecio(p, canal), 0);
+  const totalNeto         = productos.reduce((s, p) => s + (cantidades[p.id] || 0) * getPrecioNeto(p, canal), 0);
   const itemsSeleccionados = productos.filter((p) => (cantidades[p.id] || 0) > 0);
 
   const guardar = async () => {
@@ -192,7 +183,7 @@ export default function NuevoPedidoPage() {
         pedido_id:   pedido.id,
         producto_id: p.id,
         cantidad:    cantidades[p.id],
-        precio:      getPrecioFinal(p, canal),
+        precio:      getPrecio(p, canal),
         costo:       p.costo_insumos,
       }));
       const { error: itemsError } = await supabase.from('pedido_items').insert(items);
@@ -250,24 +241,6 @@ export default function NuevoPedidoPage() {
             </button>
           </div>
 
-          {/* Banner promo Martes-Jueves */}
-          {ES_DIA_PROMO && canal !== 'didi' && (
-            <div className="mb-3 flex items-center justify-between px-4 py-3 rounded-xl"
-              style={{ background: promoActiva ? '#1a0800' : '#141414', border: `1px solid ${promoActiva ? '#FF4D0055' : '#2a2a2a'}` }}>
-              <div>
-                <p className="text-sm font-bold" style={{ color: promoActiva ? '#FF4D00' : '#888' }}>
-                  🏷️ Promo Mar–Jue
-                </p>
-                <p className="text-xs mt-0.5" style={{ color: '#666' }}>Smash Sencilla a $99</p>
-              </div>
-              <button onClick={() => setPromoActiva((p) => !p)}
-                className="px-4 py-2 rounded-xl font-bold text-sm"
-                style={{ background: promoActiva ? '#FF4D00' : '#2a2a2a', color: promoActiva ? '#fff' : '#888' }}>
-                {promoActiva ? 'Activa' : 'Inactiva'}
-              </button>
-            </div>
-          )}
-
           {vozEstado && (
             <div className="px-4 py-3 rounded-xl mb-3 text-sm font-medium"
               style={{ background: `${vozColor}18`, color: vozColor, border: `1px solid ${vozColor}44` }}>
@@ -277,25 +250,18 @@ export default function NuevoPedidoPage() {
 
           <div className="space-y-2">
             {productos.map((p) => {
-              const precio         = getPrecioFinal(p, canal);
-              const precioOriginal = getPrecio(p, canal);
-              const precioNeto     = getPrecioNeto(p, canal);
-              const cant           = cantidades[p.id] || 0;
-              const esPromo        = promoActiva && ES_DIA_PROMO && p.nombre === 'Smash Sencilla' && canal !== 'didi';
+              const precio    = getPrecio(p, canal);
+              const precioNeto = getPrecioNeto(p, canal);
+              const cant      = cantidades[p.id] || 0;
               return (
                 <div key={p.id} className="flex items-center justify-between p-4 rounded-2xl"
                   style={{ background: cant > 0 ? '#1a1a0a' : '#141414', border: `1px solid ${cant > 0 ? '#FF4D0044' : 'transparent'}` }}>
                   <div>
                     <p className="font-bold text-white">{p.nombre}</p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-bold" style={{ color: esPromo ? '#FF4D00' : '#888' }}>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold" style={{ color: '#888' }}>
                         {formatMXN(precio)}
                       </p>
-                      {esPromo && precioOriginal !== precio && (
-                        <p className="text-xs line-through" style={{ color: '#555' }}>
-                          {formatMXN(precioOriginal)}
-                        </p>
-                      )}
                       {canal === 'didi' && (
                         <p className="text-xs" style={{ color: '#22c55e' }}>neto {formatMXN(precioNeto)}</p>
                       )}
