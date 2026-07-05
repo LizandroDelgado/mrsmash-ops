@@ -5,21 +5,23 @@
 
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria TEXT DEFAULT 'burger';
 
+-- Burgers (smash, bacon, doble)
+UPDATE productos SET categoria = 'burger'
+WHERE nombre ILIKE '%smash%'
+   OR nombre ILIKE '%bacon%'
+   OR nombre ILIKE '%doble%';
+
 -- Malteadas
 UPDATE productos SET categoria = 'malteada'
 WHERE nombre ILIKE '%malteada%';
 
 -- Papas
 UPDATE productos SET categoria = 'papas'
-WHERE nombre ILIKE '%papas%' OR nombre ILIKE '%francesa%';
+WHERE nombre ILIKE '%papas%';
 
 -- Bebidas
 UPDATE productos SET categoria = 'bebida'
 WHERE nombre ILIKE '%refresco%';
 
--- Burgers (asegurar el default)
-UPDATE productos SET categoria = 'burger'
-WHERE nombre IN ('Smash Sencilla', 'Bacon Smash', 'Doble Smash', 'Doble Bacon Smash');
-
--- Grant para que el cliente anon pueda leer la nueva columna
+-- Grant lectura para el cliente anon
 GRANT SELECT ON productos TO anon;

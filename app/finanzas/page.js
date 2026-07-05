@@ -5,7 +5,7 @@ import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 
-// Fallback por nombre para cuando categoria aún no esté en la DB
+// Fallback por nombre: usado cuando la columna `categoria` aún no existe en la DB
 const CATEGORIA_POR_NOMBRE = {
   'Smash Sencilla':     'burger',
   'Bacon Smash':        'burger',
@@ -19,25 +19,19 @@ const CATEGORIA_POR_NOMBRE = {
   'Refresco':           'bebida',
 };
 
-const CATEGORIA_LABELS = {
-  burger:   'Burgers',
-  malteada: 'Malteadas',
-  papas:    'Papas',
-  bebida:   'Bebidas',
-};
-
-const GANANCIA_FALLBACK = { burger: 58, malteada: 35, papas: 25, bebida: 15 };
-const CATEGORIAS_ORDEN  = ['burger', 'malteada', 'papas', 'bebida'];
+const EMOJI_CAT     = { burger: '🍔', malteada: '🥤', papas: '🍟', bebida: '🥤' };
+const CAT_ORDEN_IDX = { burger: 0, malteada: 1, papas: 2, bebida: 3 };
 
 function getCat(nombre, categoriaDB) {
-  return categoriaDB || CATEGORIA_POR_NOMBRE[nombre] || 'burger';
+  return categoriaDB || CATEGORIA_POR_NOMBRE[nombre] || 'otro';
 }
 
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-const MESES_FULL  = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MESES_FULL  = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto',
+                     'Septiembre','Octubre','Noviembre','Diciembre'];
 
 function getSemanaRange(offset) {
-  const hoy      = new Date();
+  const hoy       = new Date();
   const diaSemana = hoy.getDay();
   const diff      = diaSemana === 0 ? -6 : 1 - diaSemana;
   const lunes     = new Date(hoy);
@@ -92,29 +86,45 @@ export default function FinanzasPage() {
     setLoading(true);
     const { inicio, fin } = getRango();
 
-    // Productos con costo para calcular ganancia promedio por categoría
-    const { data: productosData } = await supabase
+    // ── Productos: intentar con categoria; si la columna no existe, sin ella ──
+    // Esto evita que un error de schema rompa toda la pantalla
+    let { data: productosData, error: prodErr } = await supabase
       .from('productos')
-      .select('id, nombre, categoria, precio_venta, costo_insumos')
+      .select('id, nombre, categoria')
       .eq('negocio_id', nid);
+    if (prodErr) {
+      ({ data: productosData } = await supabase
+        .from('productos')
+        .select('id, nombre')
+        .eq('negocio_id', nid));
+    }
 
-    // Pedidos entregados con nombre y categoría de cada producto
+    // Mapa nombre → categoria (DB primero; si null, fallback al mapa JS)
+    const productCatMap = {};
+    (productosData || []).forEach(p => {
+      productCatMap[p.nombre] = getCat(p.nombre, p.categoria ?? null);
+    });
+
+    // ── Pedidos entregados con items
+    // IMPORTANTE: no pedir `categoria` en el join anidado productos(nombre)
+    // para evitar que un error de columna borre los resultados.
     const { data: pedidosEntregados } = await supabase
       .from('pedidos')
-      .select('total, pedido_items(cantidad, productos(nombre, categoria))')
+      .select('total, pedido_items(cantidad, productos(nombre))')
       .eq('negocio_id', nid)
       .eq('estado', 'entregado')
       .gte('fecha', inicio)
       .lte('fecha', fin);
 
-    // Importaciones Didi y compras de insumos (sin cambios)
+    // ── Importaciones Didi
     const { data: importDidi } = await supabase
       .from('importaciones_didi')
-      .select('venta_bruta, comision_didi, costo_promos, ganancia_neta')
+      .select('venta_bruta, comision_didi, costo_promos')
       .eq('negocio_id', nid)
       .gte('fecha', inicio)
       .lte('fecha', fin);
 
+    // ── Compras de insumos
     const { data: insumos } = await supabase
       .from('compras_insumos')
       .select('monto')
@@ -127,79 +137,46 @@ export default function FinanzasPage() {
     const ventasBrutasDidi = (importDidi || []).reduce((s, d) => s + (d.venta_bruta   || 0), 0);
     const comisionDidi     = (importDidi || []).reduce((s, d) => s + (d.comision_didi || 0), 0);
     const costoPromosDidi  = (importDidi || []).reduce((s, d) => s + (d.costo_promos  || 0), 0);
-    const totalInsumos     = (insumos    || []).reduce((s, i) => s + i.monto, 0);
-    const ventas_brutas    = ventasPedidos + ventasBrutasDidi;
-    const ganancia_real    = ventas_brutas - totalInsumos - comisionDidi - costoPromosDidi;
+    const totalInsumos     = (insumos    || []).reduce((s, i) => s + (i.monto || 0), 0);
 
-    // ── Ganancia promedio por categoría (desde tabla productos) ─────────────
-    const catProfitsMap = {};
-    (productosData || []).forEach(p => {
-      const cat    = getCat(p.nombre, p.categoria);
-      const profit = (p.precio_venta || 0) - (p.costo_insumos || 0);
-      if (!catProfitsMap[cat]) catProfitsMap[cat] = [];
-      if (profit > 0) catProfitsMap[cat].push(profit);
-    });
-    const avgProfitPorCat = {};
-    CATEGORIAS_ORDEN.forEach(cat => {
-      const profits = catProfitsMap[cat] || [];
-      avgProfitPorCat[cat] = profits.length > 0
-        ? profits.reduce((s, p) => s + p, 0) / profits.length
-        : (GANANCIA_FALLBACK[cat] || 40);
-    });
+    const ventas_brutas = ventasPedidos + ventasBrutasDidi;
+    const ganancia_real = ventas_brutas - totalInsumos - comisionDidi - costoPromosDidi;
 
-    // ── Cantidades vendidas por categoría y por producto ────────────────────
-    const cantPorCat      = {};
-    const ventasPorNombre = {};
+    // Punto de equilibrio = todos los costos del periodo (en pesos)
+    const punto_equilibrio = totalInsumos + comisionDidi + costoPromosDidi;
 
+    // ── Cantidades por producto ──────────────────────────────────────────────
+    const acum = {}; // { nombre: { cantidad, categoria } }
     (pedidosEntregados || []).forEach(p => {
       (p.pedido_items || []).forEach(item => {
-        const nombre = item.productos?.nombre || 'Desconocido';
-        const cat    = getCat(nombre, item.productos?.categoria);
-        cantPorCat[cat] = (cantPorCat[cat] || 0) + item.cantidad;
-        if (!ventasPorNombre[nombre]) ventasPorNombre[nombre] = { cantidad: 0, categoria: cat };
-        ventasPorNombre[nombre].cantidad += item.cantidad;
+        const nombre = item.productos?.nombre;
+        if (!nombre) return;
+        const cat = productCatMap[nombre] || getCat(nombre, null);
+        if (!acum[nombre]) acum[nombre] = { cantidad: 0, categoria: cat };
+        acum[nombre].cantidad += item.cantidad;
       });
     });
 
-    const totalProductos    = Object.values(cantPorCat).reduce((s, n) => s + n, 0);
-    const ventasPorProducto = Object.entries(ventasPorNombre)
+    // Ordenar: primero por categoría (orden definido), luego por cantidad desc
+    const ventas_por_producto = Object.entries(acum)
       .map(([nombre, d]) => ({ nombre, ...d }))
-      .sort((a, b) => b.cantidad - a.cantidad);
-
-    // ── Punto de equilibrio por categoría ───────────────────────────────────
-    let pePorCat = {};
-    let totalPE  = 0;
-
-    if (totalProductos > 0) {
-      // Ponderar ganancia promedio por la mezcla de ventas del periodo
-      let weightedAvg = 0;
-      Object.entries(cantPorCat).forEach(([cat, qty]) => {
-        const pct = qty / totalProductos;
-        weightedAvg += pct * (avgProfitPorCat[cat] || GANANCIA_FALLBACK[cat] || 40);
+      .sort((a, b) => {
+        const catDiff = (CAT_ORDEN_IDX[a.categoria] ?? 99) - (CAT_ORDEN_IDX[b.categoria] ?? 99);
+        return catDiff !== 0 ? catDiff : b.cantidad - a.cantidad;
       });
-      totalPE = weightedAvg > 0 ? Math.ceil(totalInsumos / weightedAvg) : 0;
-      Object.entries(cantPorCat).forEach(([cat, qty]) => {
-        const pct = qty / totalProductos;
-        pePorCat[cat] = Math.max(1, Math.round(totalPE * pct));
-      });
-    } else {
-      // Sin ventas en el periodo: mostrar PE en burgers como referencia
-      const avgBurger = avgProfitPorCat.burger || GANANCIA_FALLBACK.burger;
-      totalPE = avgBurger > 0 ? Math.ceil(totalInsumos / avgBurger) : 0;
-      if (totalPE > 0) pePorCat = { burger: totalPE };
-    }
+
+    const total_productos = ventas_por_producto.reduce((s, p) => s + p.cantidad, 0);
 
     setDatos({
       ventas_brutas,
-      total_insumos:       totalInsumos,
-      comision_didi:       comisionDidi,
-      costo_promos_didi:   costoPromosDidi,
+      total_insumos:            totalInsumos,
+      comision_didi:            comisionDidi,
+      costo_promos_didi:        costoPromosDidi,
       ganancia_real,
-      total_productos:     totalProductos,
-      cant_por_cat:        cantPorCat,
-      pe_por_cat:          pePorCat,
-      total_pe:            totalPE,
-      ventas_por_producto: ventasPorProducto,
+      punto_equilibrio,
+      ventas_por_producto,
+      total_productos,
+      tiene_importaciones_didi: (importDidi || []).length > 0,
     });
     setLoading(false);
   };
@@ -218,7 +195,8 @@ export default function FinanzasPage() {
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
-        {/* Selector de periodo */}
+
+        {/* ── Selector de periodo ── */}
         <div className="flex gap-2">
           {[
             { key: 'semana', label: 'Semana' },
@@ -236,7 +214,7 @@ export default function FinanzasPage() {
           ))}
         </div>
 
-        {/* Navegador de semana */}
+        {/* ── Navegador de semana ── */}
         {periodo === 'semana' && (
           <div className="flex items-center justify-between px-3 py-2 rounded-xl"
             style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
@@ -261,7 +239,7 @@ export default function FinanzasPage() {
           </div>
         )}
 
-        {/* Navegador de mes */}
+        {/* ── Navegador de mes ── */}
         {periodo === 'mes' && (
           <div className="flex items-center justify-between px-3 py-2 rounded-xl"
             style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
@@ -287,11 +265,10 @@ export default function FinanzasPage() {
         )}
 
         {periodo === 'total' && (
-          <p className="text-xs text-center" style={{ color: '#666' }}>
-            Mostrando todo el historial
-          </p>
+          <p className="text-xs text-center" style={{ color: '#666' }}>Mostrando todo el historial</p>
         )}
 
+        {/* ── Contenido ── */}
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 rounded-full border-2 animate-spin"
@@ -301,7 +278,10 @@ export default function FinanzasPage() {
           <>
             {/* Hero: Ganancia real */}
             <div className="rounded-2xl p-5 text-center"
-              style={{ background: 'linear-gradient(135deg, #141414 0%, #1a1a0a 100%)', border: '1px solid #2a2a0a' }}>
+              style={{
+                background: 'linear-gradient(135deg, #141414 0%, #1a1a0a 100%)',
+                border: '1px solid #2a2a0a',
+              }}>
               <p className="text-xs font-bold tracking-widest mb-2" style={{ color: '#888' }}>
                 GANANCIA REAL
               </p>
@@ -338,61 +318,49 @@ export default function FinanzasPage() {
               </div>
             </div>
 
-            {/* Punto de equilibrio por categoría */}
+            {/* Punto de equilibrio en pesos */}
             <div className="rounded-2xl p-4"
               style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
               <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>
                 PUNTO DE EQUILIBRIO
               </p>
 
-              {datos.total_pe > 0 ? (
+              {datos.punto_equilibrio > 0 ? (
                 <>
-                  <p className="text-sm text-white mb-3">
-                    Para cubrir tus costos necesitas vender:
+                  <p className="text-sm mb-1" style={{ color: '#aaa' }}>
+                    Para cubrir tus costos necesitas vender
+                  </p>
+                  <p className="text-3xl font-bold text-white mb-4">
+                    {formatMXN(datos.punto_equilibrio)}
                   </p>
 
-                  <div className="space-y-2 mb-4">
-                    {CATEGORIAS_ORDEN
-                      .filter(cat => datos.pe_por_cat[cat] > 0)
-                      .map(cat => {
-                        const pe       = datos.pe_por_cat[cat] || 0;
-                        const vendidos = datos.cant_por_cat[cat] || 0;
-                        const cubierto = vendidos >= pe;
-                        return (
-                          <div key={cat} className="flex items-center justify-between px-3 py-2.5 rounded-xl"
-                            style={{ background: '#1a1a1a', border: `1px solid ${cubierto ? '#22c55e22' : '#2a2a2a'}` }}>
-                            <span style={{ color: '#aaa', fontSize: 14 }}>
-                              · {CATEGORIA_LABELS[cat]}
-                            </span>
-                            <div className="flex items-center gap-3">
-                              <span style={{ color: '#fff', fontWeight: 'bold' }}>
-                                {pe}
-                              </span>
-                              <span style={{ color: cubierto ? '#22c55e' : '#666', fontSize: 12 }}>
-                                {vendidos} vendidas {cubierto ? '✓' : ''}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-
-                  {/* Barra de progreso total */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs" style={{ color: '#666' }}>
-                      Total: {datos.total_productos} / {datos.total_pe} productos
-                    </span>
-                    {datos.total_productos >= datos.total_pe && (
-                      <span className="text-xs font-bold" style={{ color: '#22c55e' }}>✓ Cubierto</span>
-                    )}
-                  </div>
-                  <div className="h-2 rounded-full overflow-hidden" style={{ background: '#2a2a2a' }}>
+                  {/* Barra de progreso */}
+                  <div className="h-3 rounded-full overflow-hidden mb-3"
+                    style={{ background: '#2a2a2a' }}>
                     <div className="h-full rounded-full transition-all"
                       style={{
-                        width: `${Math.min(100, (datos.total_productos / Math.max(datos.total_pe, 1)) * 100)}%`,
-                        background: datos.total_productos >= datos.total_pe ? '#22c55e' : '#FF4D00',
+                        width: `${Math.min(100,
+                          (datos.ventas_brutas / datos.punto_equilibrio) * 100
+                        )}%`,
+                        background: datos.ventas_brutas >= datos.punto_equilibrio
+                          ? '#22c55e' : '#FF4D00',
                       }} />
                   </div>
+
+                  {datos.ventas_brutas >= datos.punto_equilibrio ? (
+                    <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
+                      ✓ Meta alcanzada — vendiste {formatMXN(datos.ventas_brutas)} de{' '}
+                      {formatMXN(datos.punto_equilibrio)}
+                    </p>
+                  ) : (
+                    <p className="text-sm" style={{ color: '#888' }}>
+                      Faltan{' '}
+                      <span style={{ color: '#FF4D00', fontWeight: 'bold' }}>
+                        {formatMXN(datos.punto_equilibrio - datos.ventas_brutas)}
+                      </span>{' '}
+                      para cubrir tus costos
+                    </p>
+                  )}
                 </>
               ) : (
                 <p className="text-sm" style={{ color: '#666' }}>
@@ -401,49 +369,57 @@ export default function FinanzasPage() {
               )}
             </div>
 
-            {/* Ventas por producto agrupadas por categoría */}
-            {datos.ventas_por_producto?.length > 0 && (
-              <div className="rounded-2xl overflow-hidden" style={{ background: '#141414' }}>
-                <div className="px-4 py-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
-                  <p className="text-xs font-bold tracking-wider" style={{ color: '#888' }}>
-                    VENTAS POR PRODUCTO
-                  </p>
-                </div>
-
-                {CATEGORIAS_ORDEN.map(cat => {
-                  const items = datos.ventas_por_producto.filter(p => p.categoria === cat);
-                  if (items.length === 0) return null;
-                  return (
-                    <div key={cat}>
-                      <div className="px-4 py-2"
-                        style={{ background: '#111', borderBottom: '1px solid #1e1e1e' }}>
-                        <span className="text-xs font-bold" style={{ color: '#FF4D00' }}>
-                          {CATEGORIA_LABELS[cat]}
-                        </span>
-                      </div>
-                      {items.map((item) => (
-                        <div key={item.nombre}
-                          className="flex items-center justify-between px-4 py-3"
-                          style={{ borderBottom: '1px solid #1e1e1e' }}>
-                          <span style={{ color: '#ccc', fontSize: 14 }}>{item.nombre}</span>
-                          <span style={{ color: '#fff', fontWeight: 'bold' }}>
-                            {item.cantidad} {cat === 'burger' ? 'burgers' : 'piezas'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-
-                <div className="flex items-center justify-between px-4 py-3"
-                  style={{ background: '#1a1a1a', borderTop: '2px solid #2a2a2a' }}>
-                  <span style={{ color: '#888', fontSize: 14 }}>Total productos</span>
-                  <span style={{ color: '#fff', fontWeight: 'bold' }}>
-                    {datos.total_productos} piezas
-                  </span>
-                </div>
+            {/* Productos vendidos */}
+            <div className="rounded-2xl overflow-hidden" style={{ background: '#141414' }}>
+              <div className="px-4 py-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
+                <p className="text-xs font-bold tracking-wider" style={{ color: '#888' }}>
+                  PRODUCTOS VENDIDOS
+                </p>
               </div>
-            )}
+
+              {datos.ventas_por_producto.length > 0 ? (
+                <>
+                  {datos.ventas_por_producto.map((item) => (
+                    <div key={item.nombre}
+                      className="flex items-center justify-between px-4 py-3"
+                      style={{ borderBottom: '1px solid #1e1e1e' }}>
+                      <span style={{ color: '#ccc', fontSize: 14 }}>
+                        {EMOJI_CAT[item.categoria] || '📦'} {item.nombre}
+                      </span>
+                      <span style={{ color: '#fff', fontWeight: 'bold' }}>
+                        {item.cantidad} uds
+                      </span>
+                    </div>
+                  ))}
+
+                  <div className="flex items-center justify-between px-4 py-3"
+                    style={{ background: '#1a1a1a', borderTop: '2px solid #2a2a2a' }}>
+                    <span style={{ color: '#888', fontSize: 14 }}>Total</span>
+                    <span style={{ color: '#fff', fontWeight: 'bold' }}>
+                      {datos.total_productos} unidades vendidas
+                    </span>
+                  </div>
+
+                  {datos.tiene_importaciones_didi && (
+                    <p className="px-4 py-2 text-xs"
+                      style={{ color: '#555', borderTop: '1px solid #1e1e1e' }}>
+                      Detalle por producto no disponible para pedidos importados de Didi
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="px-4 py-8 text-center">
+                  <p className="text-sm" style={{ color: '#555' }}>
+                    Sin ventas detalladas en este periodo.
+                  </p>
+                  {datos.tiene_importaciones_didi && (
+                    <p className="text-xs mt-2" style={{ color: '#444' }}>
+                      Detalle por producto no disponible para pedidos importados de Didi
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <p style={{ color: '#666' }}>Sin datos para este periodo.</p>
