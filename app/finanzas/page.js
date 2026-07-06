@@ -8,6 +8,7 @@ import { formatMXN } from '@/lib/calculos';
 // Fallback por nombre: usado cuando la columna `categoria` aún no existe en la DB
 const CATEGORIA_POR_NOMBRE = {
   'Smash Sencilla':     'burger',
+  'Smash Sencilla Promo':'burger',
   'Bacon Smash':        'burger',
   'Doble Smash':        'burger',
   'Doble Bacon Smash':  'burger',

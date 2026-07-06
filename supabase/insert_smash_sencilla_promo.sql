@@ -13,13 +13,14 @@ WHERE negocio_id = '34797ee1-37fa-4736-ad56-35578a126b08'
   AND orden >= 2;
 
 -- Insertar la variante promo en la posición 2 (justo debajo de Smash Sencilla)
-INSERT INTO productos (negocio_id, nombre, precio_venta, costo_insumos, categoria, disponible, orden)
+-- Nota: la columna `categoria` no existe en la tabla productos en producción,
+-- así que no se incluye aquí (Finanzas usa un fallback por nombre en el frontend).
+INSERT INTO productos (negocio_id, nombre, precio_venta, costo_insumos, disponible, orden)
 VALUES (
   '34797ee1-37fa-4736-ad56-35578a126b08',
   'Smash Sencilla Promo',
   99,
   49,
-  'burger',
   true,
   2
 );
