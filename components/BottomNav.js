@@ -1,12 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ClipboardList, ShoppingBag, BarChart2 } from 'lucide-react';
+import { Home, ClipboardList, ShoppingBag, BarChart2, TrendingUp } from 'lucide-react';
 
 const tabs = [
   { href: '/', icon: Home, label: 'Inicio' },
   { href: '/insumos', icon: ShoppingBag, label: 'Insumos' },
   { href: '/finanzas', icon: BarChart2, label: 'Finanzas' },
+  { href: '/dashboard', icon: TrendingUp, label: 'Dashboard' },
   { href: '/importar', icon: ClipboardList, label: 'Didi' },
 ];
 
