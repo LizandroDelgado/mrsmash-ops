@@ -5,6 +5,7 @@ import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, Calendar, ChevronLeft,
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatHora } from '@/lib/calculos';
+import { diaOperativo, sumarDias } from '@/lib/dia';
 
 const ESTADOS = {
   en_preparacion: { label: 'EN PREP',   color: '#eab308', bg: 'rgba(234,179,8,0.08)' },
@@ -16,8 +17,11 @@ const DIAS      = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 // ── Helpers de semana ──────────────────────────────────────────────────────
+// "Hoy" es el día operativo de Tepic (corte 05:00), no la fecha UTC del navegador
+const hoyOperativo = () => new Date(diaOperativo() + 'T12:00:00');
+
 function getSemanaRange(offset) {
-  const hoy = new Date();
+  const hoy = hoyOperativo();
   const dow = hoy.getDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   const lunes = new Date(hoy);
@@ -33,8 +37,8 @@ function getSemanaRange(offset) {
 }
 
 function getDiasDeSemana(offset) {
-  const hoy    = new Date();
-  const hoyStr = hoy.toISOString().split('T')[0];
+  const hoy    = hoyOperativo();
+  const hoyStr = diaOperativo();
   const dow    = hoy.getDay();
   const diff   = dow === 0 ? -6 : 1 - dow;
   const lunes  = new Date(hoy);
@@ -72,7 +76,7 @@ export default function HomePage() {
   const [editandoFechaPedido, setEditandoFechaPedido] = useState(null);
   const [nuevaFecha,          setNuevaFecha]          = useState('');
 
-  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyStr = diaOperativo();
 
   // Fecha efectiva para cargar pedidos del día
   const fechaEfectiva = diaSeleccionado || hoyStr;
@@ -102,6 +106,7 @@ export default function HomePage() {
     const { data } = await supabase
       .from('pedidos')
       .select('total, pedido_items(cantidad)')
+      .eq('cancelado', false)
       .gte('fecha', inicio)
       .lte('fecha', fin);
     if (!data) return;
@@ -155,6 +160,16 @@ export default function HomePage() {
     if (navigator.vibrate) navigator.vibrate(100);
   };
 
+  // Cancelar no borra: marca el pedido y el ledger revierte la venta (trigger en Postgres)
+  const toggleCancelado = async (pedido) => {
+    const cancelado = !pedido.cancelado;
+    const { error } = await supabase.from('pedidos').update({ cancelado }).eq('id', pedido.id);
+    if (error) { alert('Error al cancelar: ' + error.message); return; }
+    if (navigator.vibrate) navigator.vibrate(50);
+    setPedidos((prev) => prev.map((p) => p.id === pedido.id ? { ...p, cancelado } : p));
+    cargarResumenSemana(semanaOffset);
+  };
+
   const cambiarFechaPedido = async (id, fecha) => {
     const { error } = await supabase.from('pedidos').update({ fecha }).eq('id', id);
     if (error) { alert('Error al cambiar fecha: ' + error.message); return; }
@@ -172,8 +187,9 @@ export default function HomePage() {
   };
 
   // ── Cálculos del día ─────────────────────────────────────────────────────
-  const totalDia       = pedidos.reduce((s, p) => s + (p.total || 0), 0);
-  const totalProductos = pedidos.reduce(
+  const activos        = pedidos.filter((p) => !p.cancelado);
+  const totalDia       = activos.reduce((s, p) => s + (p.total || 0), 0);
+  const totalProductos = activos.reduce(
     (s, p) => s + (p.pedido_items?.reduce((si, i) => si + i.cantidad, 0) || 0), 0
   );
   const fechaSeleccionada = diaSeleccionado || hoyStr;
@@ -200,7 +216,7 @@ export default function HomePage() {
           </button>
           <Link href="/nuevo-pedido"
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm"
-            style={{ background: '#FF4D00', color: '#fff' }}>
+            style={{ background: '#FF4D00', color: '#fff', minHeight: 48 }}>
             <Plus size={18} strokeWidth={2.5} />Pedido
           </Link>
         </div>
@@ -284,7 +300,7 @@ export default function HomePage() {
       {/* ── KPIs del día ── */}
       <div className="grid grid-cols-3 gap-2 px-4 pt-2 pb-2">
         {[
-          { label: 'Pedidos hoy',   value: pedidos.length  },
+          { label: 'Pedidos hoy',   value: activos.length  },
           { label: 'Productos hoy', value: totalProductos  },
           { label: 'Ingresos hoy',  value: formatMXN(totalDia) },
         ].map(({ label, value }) => (
@@ -310,7 +326,9 @@ export default function HomePage() {
         ) : (
           <div className="space-y-3 mt-1">
             {pedidos.map((pedido) => {
-              const est          = ESTADOS[pedido.estado] || ESTADOS.en_preparacion;
+              const est          = pedido.cancelado
+                ? { label: 'CANCELADO', color: '#ef4444' }
+                : ESTADOS[pedido.estado] || ESTADOS.en_preparacion;
               const items        = pedido.pedido_items || [];
               const resumenItems = items.map((i) => `${i.cantidad}x ${i.productos?.nombre || '?'}`).join(' · ');
               const expandido    = pedidoExpandido === pedido.id;
@@ -328,7 +346,7 @@ export default function HomePage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs" style={{ color: '#666' }}>{formatHora(pedido.hora)}</span>
                         <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#1e1e1e', color: '#888' }}>
-                          {pedido.canal === 'whatsapp' ? 'WA' : pedido.canal === 'didi' ? 'Didi' : 'Manual'}
+                          {pedido.canal === 'whatsapp' ? 'WA' : pedido.canal === 'didi' ? 'Didi' : pedido.canal === 'salon' ? 'Salón' : 'Manual'}
                         </span>
                       </div>
                     </div>
@@ -342,9 +360,14 @@ export default function HomePage() {
                     )}
 
                     <div className="flex items-center justify-between mt-3">
-                      <span className="font-bold text-white">{formatMXN(pedido.total)}</span>
+                      <span className="font-bold text-white" style={pedido.cancelado ? { textDecoration: 'line-through', color: '#666' } : undefined}>
+                        {formatMXN(pedido.total)}
+                        {pedido.metodo_pago && pedido.metodo_pago !== 'didi' && (
+                          <span className="text-xs font-normal ml-2" style={{ color: '#666' }}>{pedido.metodo_pago}</span>
+                        )}
+                      </span>
                       <div className="flex items-center gap-2">
-                        {pedido.estado !== 'entregado' && (
+                        {pedido.estado !== 'entregado' && !pedido.cancelado && (
                           <button onClick={() => cambiarEstado(pedido.id, pedido.estado)}
                             className="px-4 py-2 rounded-xl font-bold text-sm"
                             style={{ background: pedido.estado === 'en_preparacion' ? '#FF4D00' : '#22c55e', color: '#fff' }}>
@@ -416,6 +439,11 @@ export default function HomePage() {
                             className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-xl"
                             style={{ color: '#888', background: '#1e1e1e' }}>
                             ✏️ Cambiar fecha
+                          </button>
+                          <button onClick={() => toggleCancelado(pedido)}
+                            className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-xl"
+                            style={{ color: pedido.cancelado ? '#22c55e' : '#eab308', background: '#1e1e1e' }}>
+                            {pedido.cancelado ? '↺ Reactivar' : '⊘ Cancelar'}
                           </button>
                           <button onClick={() => setConfirmEliminar(pedido.id)}
                             className="flex items-center gap-2 text-sm py-2 px-3 rounded-xl"

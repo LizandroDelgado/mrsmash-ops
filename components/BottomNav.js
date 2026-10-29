@@ -1,14 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ClipboardList, ShoppingBag, BarChart2, TrendingUp } from 'lucide-react';
+import { Home, Wallet, Receipt, Package, TrendingUp } from 'lucide-react';
 
 const tabs = [
-  { href: '/', icon: Home, label: 'Inicio' },
-  { href: '/insumos', icon: ShoppingBag, label: 'Insumos' },
-  { href: '/finanzas', icon: BarChart2, label: 'Finanzas' },
-  { href: '/dashboard', icon: TrendingUp, label: 'Dashboard' },
-  { href: '/importar', icon: ClipboardList, label: 'Didi' },
+  { href: '/',           icon: Home,       label: 'Pedidos' },
+  { href: '/caja',       icon: Wallet,     label: 'Caja' },
+  { href: '/gastos',     icon: Receipt,    label: 'Gastos' },
+  { href: '/inventario', icon: Package,    label: 'Inventario' },
+  { href: '/dashboard',  icon: TrendingUp, label: 'Dashboard' },
 ];
 
 export default function BottomNav() {
@@ -30,11 +30,11 @@ export default function BottomNav() {
             <Link
               key={href}
               href={href}
-              className="flex-1 flex flex-col items-center justify-center pt-3 pb-1 gap-1"
-              style={{ color: active ? '#FF4D00' : '#666' }}
+              className="flex-1 min-w-0 flex flex-col items-center justify-center pt-3 pb-1 gap-1"
+              style={{ color: active ? '#FF4D00' : '#666', minHeight: 56 }}
             >
               <Icon size={22} strokeWidth={active ? 2.5 : 1.5} />
-              <span className="text-xs font-medium">{label}</span>
+              <span className="text-xs font-medium truncate max-w-full">{label}</span>
             </Link>
           );
         })}

@@ -114,6 +114,7 @@ export default function FinanzasPage() {
       .select('total, pedido_items(cantidad, productos(nombre))')
       .eq('negocio_id', nid)
       .eq('estado', 'entregado')
+      .eq('cancelado', false)
       .gte('fecha', inicio)
       .lte('fecha', fin);
 

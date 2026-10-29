@@ -7,6 +7,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import BottomNav from '@/components/BottomNav';
+import MasMenu from '@/components/MasMenu';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import {
@@ -87,7 +88,8 @@ export default function DashboardPage() {
         supabase.from('pedidos')
           .select('total, canal, fecha, hora, pedido_items(producto_id, cantidad, precio, costo, productos(nombre))')
           .eq('negocio_id', NEGOCIO_ID)
-          .eq('estado', 'entregado'),
+          .eq('estado', 'entregado')
+          .eq('cancelado', false),
         supabase.from('importaciones_didi')
           .select('venta_bruta, comision_didi, costo_promos, fecha')
           .eq('negocio_id', NEGOCIO_ID),
@@ -183,9 +185,10 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
-      <header className="sticky top-0 z-40 px-4 py-3"
+      <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3"
         style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
         <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
+        <MasMenu />
       </header>
 
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
@@ -284,7 +287,7 @@ export default function DashboardPage() {
 
                   {[
                     { label: 'WhatsApp', pedidos: mesActual.whatsapp.pedidos, ganancia: mesActual.whatsapp.venta, color: '#25D366' },
-                    { label: 'Manual',   pedidos: mesActual.manual.pedidos,   ganancia: mesActual.manual.venta,   color: '#888' },
+                    { label: 'Salón',    pedidos: mesActual.manual.pedidos,   ganancia: mesActual.manual.venta,   color: '#888' },
                     { label: 'Didi',     pedidos: mesActual.didi.pedidos,     ganancia: mesActual.didi.ganancia,  color: '#FF4D00' },
                   ].map(({ label, pedidos: n, ganancia, color }) => {
                     const pctPedidos = totalPedidosCanal ? (n / totalPedidosCanal) * 100 : 0;

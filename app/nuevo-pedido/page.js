@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
+import { diaOperativo, sumarDias } from '@/lib/dia';
+import { METODOS_VENTA } from '@/lib/negocio';
 
 function parsearVoz(texto, productos) {
   const t = texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -83,6 +85,7 @@ export default function NuevoPedidoPage() {
   const [cantidades,         setCantidades]         = useState({});
   const [cliente,            setCliente]            = useState('');
   const [canal,              setCanal]              = useState('whatsapp');
+  const [metodoPago,         setMetodoPago]         = useState('efectivo');
   const [notas,              setNotas]              = useState('');
   const [guardando,          setGuardando]          = useState(false);
   const [escuchando,         setEscuchando]         = useState(false);
@@ -93,7 +96,8 @@ export default function NuevoPedidoPage() {
   const [fechaPersonalizada, setFechaPersonalizada] = useState('');
   const recognitionRef = useRef(null);
 
-  const hoyStr = new Date().toISOString().split('T')[0];
+  // Día operativo (Tepic, corte 05:00): un pedido de las 23:30 o la 01:00 es de "hoy"
+  const hoyStr = diaOperativo();
 
   useEffect(() => {
     supabase.from('productos').select('*').eq('disponible', true).order('orden')
@@ -109,10 +113,7 @@ export default function NuevoPedidoPage() {
 
   const getFechaFinal = () => {
     if (fechaOpt === 'hoy')  return hoyStr;
-    if (fechaOpt === 'ayer') {
-      const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
-      return ayer.toISOString().split('T')[0];
-    }
+    if (fechaOpt === 'ayer') return sumarDias(hoyStr, -1);
     return fechaPersonalizada || hoyStr;
   };
 
@@ -167,6 +168,8 @@ export default function NuevoPedidoPage() {
           notas:          notas   || null,
           estado:         'en_preparacion',
           total:          canal === 'didi' ? totalNeto : total,
+          total_bruto:    canal === 'didi' ? total : null,
+          metodo_pago:    canal === 'didi' ? 'didi' : metodoPago,
           fecha, hora,
         }).select().single();
       if (pedidoError) throw pedidoError;
@@ -207,17 +210,26 @@ export default function NuevoPedidoPage() {
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>CANAL</p>
           <div className="flex gap-2">
-            {['whatsapp', 'didi', 'manual'].map((c) => (
+            {['whatsapp', 'salon', 'didi'].map((c) => (
               <button key={c} onClick={() => setCanal(c)} className="flex-1 py-3 rounded-xl font-bold text-sm"
                 style={{ background: canal === c ? '#FF4D00' : '#141414', color: canal === c ? '#fff' : '#888', border: `1px solid ${canal === c ? '#FF4D00' : '#2a2a2a'}` }}>
-                {c === 'whatsapp' ? 'WhatsApp' : c === 'didi' ? 'Didi' : 'Manual'}
+                {c === 'whatsapp' ? 'WhatsApp' : c === 'didi' ? 'Didi' : 'Salón'}
               </button>
             ))}
           </div>
-          {canal === 'didi' && (
+          {canal === 'didi' ? (
             <p className="text-xs mt-2 px-1" style={{ color: '#666' }}>
               💡 Se registra el precio neto (lo que entra al banco)
             </p>
+          ) : (
+            <div className="flex gap-2 mt-2">
+              {METODOS_VENTA.map(({ key, label }) => (
+                <button key={key} onClick={() => setMetodoPago(key)} className="flex-1 py-3 rounded-xl font-bold text-sm"
+                  style={{ background: metodoPago === key ? '#FF4D0022' : '#141414', color: metodoPago === key ? '#FF4D00' : '#888', border: `1px solid ${metodoPago === key ? '#FF4D00' : '#2a2a2a'}` }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
         </section>
 
