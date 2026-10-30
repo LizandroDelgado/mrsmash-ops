@@ -86,7 +86,7 @@ export default function InventarioPage() {
   if (cargando) {
     return (
       <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-        <Header right={<MasMenu />} />
+        <Header titulo="Inventario" right={<MasMenu />} />
         <Cargando />
         <BottomNav />
       </div>
@@ -102,25 +102,25 @@ export default function InventarioPage() {
     ];
     return (
       <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-        <Header right={<MasMenu />} />
+        <Header titulo="Inventario" right={<MasMenu />} />
         <main className="flex-1 px-4 pt-4 pb-32 space-y-3">
           <div className="text-center py-2">
             <p className="text-4xl">📦</p>
-            <p className="font-bold text-white text-lg mt-2">Arranca tu inventario</p>
+            <p className="font-bold text-ink text-lg mt-2">Arranca tu inventario</p>
             <p className="text-sm" style={{ color: C.dim }}>1. Da de alta tus insumos → 2. Arma tus recetas → 3. Haz tu primer conteo</p>
           </div>
           {pasos.map((p) => (
-            <Link key={p.n} href={p.href} className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+            <Link key={p.n} href={p.href} className="flex items-center gap-3 px-4 py-3 rounded-full"
               style={{ background: C.surface, border: `1px solid ${p.n === 1 ? C.brand : C.border}`, minHeight: 72 }}>
               <span className="flex items-center justify-center rounded-full font-bold shrink-0"
-                style={{ width: 40, height: 40, background: p.n === 1 ? C.brand : C.surface2, color: '#fff' }}>{p.n}</span>
+                style={{ width: 40, height: 40, background: p.n === 1 ? C.brandFill : C.surface2, color: 'var(--on-orange)' }}>{p.n}</span>
               <span className="min-w-0">
-                <span className="block font-bold text-white">{p.titulo}</span>
+                <span className="block font-bold text-ink">{p.titulo}</span>
                 <span className="block text-xs" style={{ color: C.dim }}>{p.texto}</span>
               </span>
             </Link>
           ))}
-          <Link href="/insumos" className="flex items-center justify-center gap-2 rounded-2xl font-bold"
+          <Link href="/insumos" className="flex items-center justify-center gap-2 rounded-full font-bold"
             style={{ background: C.surface2, color: C.dim, minHeight: 52 }}>
             <ShoppingBag size={18} /> Registrar compra de insumos
           </Link>
@@ -139,23 +139,23 @@ export default function InventarioPage() {
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-      <Header right={<MasMenu />} />
+      <Header titulo="Inventario" right={<MasMenu />} />
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
 
         {/* ── Resumen ── */}
         <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl px-4 py-3" style={{ background: C.surface }}>
+          <div className="rounded-2xl px-4 py-3" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
             <p className="text-xs font-bold" style={{ color: C.dim }}>VALOR INVENTARIO</p>
-            <p className="text-xl font-bold text-white">{formatMXN(valorTotal)}</p>
+            <p className="text-xl font-bold text-ink">{formatMXN(valorTotal)}</p>
           </div>
-          <div className="rounded-2xl px-4 py-3" style={{ background: bajos ? `${C.bad}1a` : C.surface, border: bajos ? `1px solid ${C.bad}66` : 'none' }}>
+          <div className="rounded-2xl px-4 py-3" style={{ background: bajos ? `${C.badSoft}` : C.surface, border: bajos ? `1px solid ${C.badLine}` : 'none' }}>
             <p className="text-xs font-bold" style={{ color: bajos ? C.bad : C.dim }}>BAJO MÍNIMO</p>
-            <p className="text-xl font-bold" style={{ color: bajos ? C.bad : '#fff' }}>{bajos}</p>
+            <p className="text-xl font-bold" style={{ color: bajos ? C.bad : C.ink }}>{bajos}</p>
           </div>
         </div>
 
-        <Link href="/inventario/conteo" className="flex items-center justify-center gap-2 rounded-2xl font-bold text-lg"
-          style={{ background: C.brand, color: '#fff', minHeight: 60 }}>
+        <Link href="/inventario/conteo" className="btn-primary flex items-center justify-center gap-2 rounded-full text-xl font-display"
+          style={{ minHeight: 60, fontWeight: 600 }}>
           <ClipboardCheck size={22} /> {conteoAbierto ? 'Continuar conteo' : 'Contar inventario'}
         </Link>
         {sinContar > 0 && (
@@ -173,17 +173,17 @@ export default function InventarioPage() {
             { href: '/inventario/carga', icon: PackagePlus, label: 'Alta insumos' },
           ].map(({ href, onClick, icon: Icon, label }) => {
             const cls = 'flex flex-col items-center justify-center gap-1 rounded-2xl text-xs font-bold';
-            const st = { background: C.surface, color: '#ddd', minHeight: 64 };
+            const st = { background: C.surface, color: 'var(--ink)', minHeight: 64 };
             return href
-              ? <Link key={label} href={href} className={cls} style={st}><Icon size={20} style={{ color: C.brand }} />{label}</Link>
-              : <button key={label} type="button" onClick={onClick} className={cls} style={st}><Icon size={20} style={{ color: C.brand }} />{label}</button>;
+              ? <Link key={label} href={href} className={cls} style={st}><Icon size={20} style={{ color: C.brandText }} />{label}</Link>
+              : <button key={label} type="button" onClick={onClick} className={cls} style={st}><Icon size={20} style={{ color: C.brandText }} />{label}</button>;
           })}
         </div>
 
         {/* ── Productos sin receta ── */}
         {sinReceta.length > 0 && (
           <Link href="/inventario/recetas" className="block rounded-2xl px-4 py-3"
-            style={{ background: `${C.warn}14`, border: `1px solid ${C.warn}55` }}>
+            style={{ background: `${C.warnSoft}`, border: `1px solid ${C.warnLine}` }}>
             <p className="flex items-center gap-2 font-bold text-sm" style={{ color: C.warn }}>
               <AlertTriangle size={16} /> Productos sin receta ({sinReceta.length})
             </p>
@@ -194,7 +194,7 @@ export default function InventarioPage() {
         )}
 
         {/* ── Food cost ── */}
-        <div className="rounded-2xl p-4 space-y-3" style={{ background: C.surface }}>
+        <div className="rounded-2xl p-4 space-y-3" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold" style={{ color: C.dim }}>FOOD COST</p>
             <p className="text-xs" style={{ color: C.dimmer }}>meta {pct(meta)}</p>
@@ -231,7 +231,7 @@ export default function InventarioPage() {
         </div>
 
         {/* ── Lista de compras ── */}
-        <div className="rounded-2xl p-4 space-y-3" style={{ background: C.surface }}>
+        <div className="rounded-2xl p-4 space-y-3" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold" style={{ color: C.dim }}>LISTA DE COMPRAS</p>
             <p className="text-xs" style={{ color: C.dimmer }}>para {dias} días</p>
@@ -243,29 +243,29 @@ export default function InventarioPage() {
               {lista.map((s) => (
                 <div key={s.insumo_id} className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-white truncate">{s.nombre}</p>
+                    <p className="text-sm font-bold text-ink truncate">{s.nombre}</p>
                     <p className="text-xs" style={{ color: s.bajo_minimo ? C.bad : C.warn }}>
                       {s.bajo_minimo ? 'Bajo mínimo' : `Alcanza ≈ ${Number(s.dias_cobertura)} días`} · hay {fmtCantidad(s.stock, s.unidad_base)}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-white">{fmtCantidad(s.sugerido, s.unidad_base)}</p>
+                    <p className="text-sm font-bold text-ink">{fmtCantidad(s.sugerido, s.unidad_base)}</p>
                     <p className="text-xs" style={{ color: C.dim }}>≈ {formatMXN(s.costo)}</p>
                   </div>
                 </div>
               ))}
               <div className="flex items-center justify-between pt-2" style={{ borderTop: `1px solid ${C.border}` }}>
                 <p className="text-xs font-bold" style={{ color: C.dim }}>COSTO ESTIMADO</p>
-                <p className="font-bold text-white">{formatMXN(lista.reduce((s, i) => s + i.costo, 0))}</p>
+                <p className="font-bold text-ink">{formatMXN(lista.reduce((s, i) => s + i.costo, 0))}</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={copiar} className="flex items-center justify-center gap-2 rounded-xl font-bold text-sm"
-                  style={{ background: copiado ? C.ok : C.surface2, color: '#fff', minHeight: 52 }}>
+                <button type="button" onClick={copiar} className="flex items-center justify-center gap-2 rounded-full text-base"
+                  style={{ background: copiado ? C.okSoft : C.surface, border: `1px solid ${copiado ? C.okLine : C.border}`, color: copiado ? C.ok : C.ink, minHeight: 52 }}>
                   <Copy size={16} /> {copiado ? '¡Copiada!' : 'Copiar'}
                 </button>
                 <a href={`https://wa.me/?text=${encodeURIComponent(textoLista())}`} target="_blank" rel="noreferrer"
-                  className="flex items-center justify-center gap-2 rounded-xl font-bold text-sm"
-                  style={{ background: '#25D366', color: '#fff', minHeight: 52 }}>
+                  className="btn-accent flex items-center justify-center gap-2 rounded-full text-base font-display"
+                  style={{ minHeight: 52, fontWeight: 600 }}>
                   <Send size={16} /> WhatsApp
                 </a>
               </div>
@@ -281,9 +281,9 @@ export default function InventarioPage() {
               {cat.items.map((i) => (
                 <button key={i.insumo_id} type="button" onClick={() => setDetalle(i)}
                   className="w-full flex items-center justify-between gap-2 px-4 rounded-xl text-left"
-                  style={{ background: C.surface, minHeight: 56, border: i.bajo_minimo ? `1px solid ${C.bad}66` : 'none' }}>
+                  style={{ background: C.surface, minHeight: 56, border: i.bajo_minimo ? `1px solid ${C.badLine}` : 'none' }}>
                   <span className="min-w-0">
-                    <span className="block font-bold text-white truncate">{i.nombre}</span>
+                    <span className="block font-bold text-ink truncate">{i.nombre}</span>
                     <span className="block text-xs" style={{ color: C.dimmer }}>
                       {!i.contado ? 'sin contar' : i.dias_cobertura != null ? `≈ ${Number(i.dias_cobertura)} días` : 'sin consumo aún'}
                       {Number(i.costo_promedio) > 0 && ` · ${formatMXN2(costoGrande(i.costo_promedio, i.unidad_base))}/${UNIDAD_GRANDE[i.unidad_base].label}`}
@@ -291,9 +291,9 @@ export default function InventarioPage() {
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     {i.contado && i.bajo_minimo && (
-                      <span className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: `${C.bad}22`, color: C.bad }}>Bajo</span>
+                      <span className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: `${C.badSoft}`, color: C.bad }}>Bajo</span>
                     )}
-                    <span className="font-bold" style={{ color: !i.contado ? C.dimmer : Number(i.stock) < 0 ? C.bad : '#fff' }}>
+                    <span className="font-bold" style={{ color: !i.contado ? C.dimmer : Number(i.stock) < 0 ? C.bad : C.ink }}>
                       {i.contado ? fmtCantidad(i.stock, i.unidad_base) : '—'}
                     </span>
                   </span>
@@ -340,20 +340,20 @@ function DetalleInsumo({ insumo, proveedores, onClose, onMerma, onGuardado }) {
   return (
     <Sheet open title={insumo.nombre} onClose={onClose}>
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl px-3 py-2" style={{ background: C.surface }}>
+        <div className="rounded-xl px-3 py-2" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <p className="text-xs" style={{ color: C.dim }}>Hay</p>
-          <p className="font-bold text-white">{insumo.contado ? fmtCantidad(insumo.stock, insumo.unidad_base) : 'Sin contar'}</p>
+          <p className="font-bold text-ink">{insumo.contado ? fmtCantidad(insumo.stock, insumo.unidad_base) : 'Sin contar'}</p>
         </div>
-        <div className="rounded-xl px-3 py-2" style={{ background: C.surface }}>
+        <div className="rounded-xl px-3 py-2" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <p className="text-xs" style={{ color: C.dim }}>Costo</p>
-          <p className="font-bold text-white">
+          <p className="font-bold text-ink">
             {formatMXN2(costoGrande(insumo.costo_promedio, insumo.unidad_base))}/{UNIDAD_GRANDE[insumo.unidad_base].label}
           </p>
           <p className="text-xs" style={{ color: C.dimmer }}>{insumo.costo_origen === 'compras' ? 'de tus compras' : 'de referencia'}</p>
         </div>
       </div>
-      <button type="button" onClick={onMerma} className="w-full flex items-center justify-center gap-2 rounded-xl font-bold"
-        style={{ background: `${C.bad}22`, color: C.bad, minHeight: 52 }}>
+      <button type="button" onClick={onMerma} className="w-full flex items-center justify-center gap-2 rounded-full font-bold"
+        style={{ background: `${C.badSoft}`, color: C.bad, minHeight: 52 }}>
         <Flame size={18} /> Registrar merma
       </button>
       <div>
@@ -419,10 +419,10 @@ function MermaSheet({ inicial, insumos, onClose, onGuardado }) {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between rounded-xl px-4" style={{ background: C.surface, minHeight: 52 }}>
-            <p className="font-bold text-white">{insumo.nombre}</p>
+          <div className="flex items-center justify-between rounded-xl px-4" style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 52 }}>
+            <p className="font-bold text-ink">{insumo.nombre}</p>
             {!inicial && (
-              <button type="button" onClick={() => setInsumo(null)} className="text-sm px-3 rounded-xl"
+              <button type="button" onClick={() => setInsumo(null)} className="text-sm px-3 rounded-full"
                 style={{ background: C.surface2, color: C.dim, minHeight: 44 }}>Cambiar</button>
             )}
           </div>
@@ -445,7 +445,7 @@ function MermaSheet({ inicial, insumos, onClose, onGuardado }) {
               onChange={(k) => setMotivo(motivo === k ? null : k)} wrap />
             {motivo === 'otro' && <div className="mt-2"><TextInput value={otro} onChange={setOtro} placeholder="¿Qué pasó?" /></div>}
           </div>
-          <BotonPrincipal onClick={guardar} disabled={!(base > 0) || guardando} color={C.bad}>
+          <BotonPrincipal onClick={guardar} disabled={!(base > 0) || guardando} variante="peligro">
             {guardando ? 'Guardando…' : 'Registrar merma'}
           </BotonPrincipal>
         </>

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, X, Plus } from 'lucide-react';
-import { Label, Chips, MontoInput, CantidadInput, TextInput, BotonPrincipal, C } from '@/components/ui';
+import { Label, Chips, MontoInput, CantidadInput, TextInput, BotonPrincipal, C, Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
@@ -60,25 +60,16 @@ export default function CargaInicialPage() {
     setHecho(data);
   };
 
-  const header = (
-    <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
-      style={{ background: C.bg, borderBottom: `1px solid ${C.surface2}` }}>
-      <Link href="/inventario" aria-label="Volver" className="flex items-center justify-center rounded-xl"
-        style={{ width: 48, height: 48, background: C.surface2 }}>
-        <ChevronLeft size={22} style={{ color: C.dim }} />
-      </Link>
-      <p className="font-bold text-white text-lg">Alta de insumos</p>
-    </header>
-  );
+  const header = <Header titulo="Alta de insumos" back="/inventario" />;
 
   if (hecho) {
     return (
       <div className="min-h-screen" style={{ background: C.bg }}>
         {header}
         <main className="px-4 pt-4 pb-10 space-y-3">
-          <div className="rounded-2xl p-5 text-center space-y-1" style={{ background: C.surface }}>
+          <div className="rounded-2xl p-5 text-center space-y-1" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
             <p className="text-4xl">✅</p>
-            <p className="font-bold text-white text-lg">{hecho.insumos} insumos dados de alta</p>
+            <p className="font-bold text-ink text-lg">{hecho.insumos} insumos dados de alta</p>
             <p className="text-sm" style={{ color: C.dim }}>Inventario valorizado: {formatMXN(Number(hecho.valor_inventario))}</p>
           </div>
           <BotonPrincipal onClick={() => router.push('/inventario/recetas')}>Siguiente: arma tus recetas</BotonPrincipal>
@@ -105,10 +96,10 @@ export default function CargaInicialPage() {
           return (
             <div key={f.key} className="rounded-2xl p-3 space-y-3" style={{ background: C.surface, border: `1px solid ${repetido(f) ? C.bad : C.border}` }}>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold shrink-0" style={{ color: C.brand }}>{n + 1}</span>
+                <span className="text-sm font-bold shrink-0" style={{ color: C.brandText }}>{n + 1}</span>
                 <div className="flex-1"><TextInput value={f.nombre} onChange={(v) => cambiar(f.key, 'nombre', v)} placeholder="Nombre (ej. Carne molida)" /></div>
                 <button type="button" onClick={() => quitar(f.key)} aria-label="Quitar"
-                  className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 48, height: 48, background: C.surface2 }}>
+                  className="flex items-center justify-center rounded-full shrink-0" style={{ width: 48, height: 48, background: C.surface2 }}>
                   <X size={18} style={{ color: C.dimmer }} />
                 </button>
               </div>
@@ -134,8 +125,8 @@ export default function CargaInicialPage() {
         })}
 
         <button type="button" onClick={agregarFila}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl font-bold"
-          style={{ background: C.surface2, color: C.brand, minHeight: 52, border: `1px dashed ${C.brand}` }}>
+          className="w-full flex items-center justify-center gap-2 rounded-full font-bold"
+          style={{ background: C.surface2, color: C.brandText, minHeight: 52, border: `1px dashed ${C.brand}` }}>
           <Plus size={18} /> Otro insumo
         </button>
       </main>

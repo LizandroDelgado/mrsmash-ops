@@ -1,11 +1,20 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { Label, Chips, MontoInput, TextInput, BotonPrincipal, Cargando, C } from '@/components/ui';
+import { Header, Label, Chips, MontoInput, TextInput, BotonPrincipal, Cargando, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { NEGOCIO_ID, DIAS_SEMANA_ISO, vibrar, msgError } from '@/lib/negocio';
+
+// Tema: Sistema / Claro / Oscuro. Se guarda en localStorage (el layout lo aplica antes de pintar).
+const TEMAS = [{ key: 'sistema', label: 'Sistema' }, { key: 'claro', label: 'Claro' }, { key: 'oscuro', label: 'Oscuro' }];
+function aplicarTema(t) {
+  const html = document.documentElement;
+  if (t === 'claro') html.setAttribute('data-theme', 'light');
+  else if (t === 'oscuro') html.setAttribute('data-theme', 'dark');
+  else html.removeAttribute('data-theme');
+  try { if (t === 'sistema') localStorage.removeItem('tema'); else localStorage.setItem('tema', t); } catch { /* sin almacenamiento: sólo esta sesión */ }
+}
 
 const PCT = (v) => String(Math.round(Number(v) * 10000) / 100);   // 0.02 → "2"
 
@@ -17,6 +26,12 @@ export default function ConfiguracionPage() {
   const [cargando,  setCargando]  = useState(true);
   const [guardando, setGuardando] = useState(null); // 'saldos' | 'config'
   const [aviso,     setAviso]     = useState(null);
+  const [tema,      setTema]      = useState('sistema');
+
+  useEffect(() => {
+    try { const t = localStorage.getItem('tema'); if (t === 'claro' || t === 'oscuro') setTema(t); } catch { /* sin almacenamiento */ }
+  }, []);
+  const cambiarTema = (t) => { setTema(t); aplicarTema(t); vibrar(); };
 
   const cargar = useCallback(async () => {
     const [{ data: cs }, { data: cfg }] = await Promise.all([
@@ -47,7 +62,7 @@ export default function ConfiguracionPage() {
         if (error) throw error;
       }
       vibrar();
-      setAviso({ texto: 'Saldos guardados', color: C.ok });
+      setAviso({ texto: 'Saldos guardados', tipo: 'ok' });
       await cargar();
     } catch (err) {
       alert('No se pudo guardar: ' + msgError(err));
@@ -65,7 +80,7 @@ export default function ConfiguracionPage() {
       dia_pago_didi:              config.dia_pago_didi,
     }).eq('negocio_id', NEGOCIO_ID);
     if (error) alert('No se pudo guardar: ' + msgError(error));
-    else { vibrar(); setAviso({ texto: 'Configuración guardada', color: C.ok }); await cargar(); }
+    else { vibrar(); setAviso({ texto: 'Configuración guardada', tipo: 'ok' }); await cargar(); }
     setGuardando(null);
   };
 
@@ -74,18 +89,12 @@ export default function ConfiguracionPage() {
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-      <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
-        style={{ background: C.bg, borderBottom: `1px solid ${C.surface2}` }}>
-        <button type="button" onClick={() => router.back()} className="p-2 -ml-2 rounded-lg" aria-label="Regresar">
-          <ArrowLeft size={22} />
-        </button>
-        <p className="font-bold text-lg">Configuración</p>
-      </header>
+      <Header titulo="Configuración" back={() => router.back()} />
 
       <main className="flex-1 px-4 pt-4 pb-16 space-y-6">
         {aviso && (
           <button type="button" onClick={() => setAviso(null)} className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold"
-            style={{ background: `${aviso.color}18`, color: aviso.color, border: `1px solid ${aviso.color}44` }}>
+            style={{ background: C.okSoft, color: C.ok, border: `1px solid ${C.okLine}` }}>
             {aviso.texto}
           </button>
         )}
@@ -94,7 +103,7 @@ export default function ConfiguracionPage() {
           <>
             <section className="space-y-3">
               <div>
-                <Label color={C.brand}>SALDOS DE HOY</Label>
+                <Label color={C.brandText}>SALDOS DE HOY</Label>
                 <p className="text-xs" style={{ color: C.dimmer }}>
                   Escribe cuánto hay en cada cuenta ahorita. La app ajusta la diferencia y desde ahí lleva la cuenta.
                 </p>
@@ -102,7 +111,7 @@ export default function ConfiguracionPage() {
               {cuentas.map((c) => (
                 <div key={c.cuenta_id}>
                   <div className="flex justify-between mb-1">
-                    <p className="text-sm font-bold text-white">{c.nombre}</p>
+                    <p className="text-sm font-bold text-ink">{c.nombre}</p>
                     <p className="text-xs" style={{ color: C.dimmer }}>Actual: {formatMXN(c.saldo)}</p>
                   </div>
                   <MontoInput value={saldos[c.cuenta_id] ?? ''} placeholder={String(Number(c.saldo))}
@@ -116,7 +125,7 @@ export default function ConfiguracionPage() {
 
             {config && (
               <section className="space-y-4">
-                <Label color={C.brand}>PARÁMETROS</Label>
+                <Label color={C.brandText}>PARÁMETROS</Label>
                 <div>
                   <Label>TU SUELDO SEMANAL (cuenta como gasto)</Label>
                   <MontoInput value={config.sueldo_dueno_semanal} onChange={set('sueldo_dueno_semanal')} />
@@ -147,6 +156,14 @@ export default function ConfiguracionPage() {
             )}
           </>
         )}
+
+        <section className="space-y-2">
+          <Label color={C.brandText}>APARIENCIA</Label>
+          <Chips options={TEMAS} value={tema} onChange={cambiarTema} />
+          <p className="text-xs" style={{ color: C.dimmer }}>
+            Sistema: claro de día y oscuro de noche, según tu celular.
+          </p>
+        </section>
       </main>
     </div>
   );

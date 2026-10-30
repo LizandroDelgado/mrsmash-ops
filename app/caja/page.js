@@ -160,7 +160,7 @@ export default function CajaPage() {
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-      <Header right={<MasMenu />} />
+      <Header titulo="Caja" right={<MasMenu />} />
 
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
         {aviso && (
@@ -171,14 +171,14 @@ export default function CajaPage() {
         )}
 
         {/* ── Dinero libre (Fase 3) ── */}
-        <div className="rounded-2xl p-4" style={{ background: C.surface, border: `1px solid ${C.brand}44` }}>
-          <p className="text-xs font-bold tracking-wider" style={{ color: C.brand }}>DINERO LIBRE</p>
-          <p className="text-3xl font-bold text-white mt-1">—</p>
-          <p className="text-xs mt-1" style={{ color: C.dimmer }}>
+        <div className="rounded-card p-5" style={{ background: C.band, color: C.bandInk }}>
+          <p className="text-xs font-bold tracking-wider" style={{ color: C.bandInkSoft }}>DINERO LIBRE</p>
+          <p className="font-display mt-1" style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 700, color: C.bandInk }}>—</p>
+          <p className="text-xs mt-1" style={{ color: C.bandInkSoft }}>
             Próximamente: lo que te queda después de pagos, reserva de impuestos e inventario.
           </p>
-          <p className="text-sm mt-3" style={{ color: C.dim }}>
-            En cuentas hoy: <span className="font-bold text-white">{formatMXN(liquido)}</span>
+          <p className="text-sm mt-3" style={{ color: C.bandInkSoft }}>
+            En cuentas hoy: <span className="font-display" style={{ color: C.bandInk, fontWeight: 600 }}>{formatMXN(liquido)}</span>
           </p>
         </div>
 
@@ -199,7 +199,7 @@ export default function CajaPage() {
                   className="rounded-2xl p-3 text-left"
                   style={{ background: C.surface, border: `1px solid ${activo ? C.brand : 'transparent'}`, minHeight: 72 }}>
                   <p className="text-xs truncate" style={{ color: C.dim }}>{c.nombre}</p>
-                  <p className="text-lg font-bold" style={{ color: neg ? C.bad : '#fff' }}>{formatMXN(c.saldo)}</p>
+                  <p className="text-lg font-bold" style={{ color: neg ? C.bad : C.ink }}>{formatMXN(c.saldo)}</p>
                 </button>
               );
             })}
@@ -210,9 +210,9 @@ export default function CajaPage() {
         <div className="grid grid-cols-2 gap-2">
           {ACCIONES.map(({ key, label, icon: Icon }) => (
             <button key={key} type="button" onClick={() => abrir(key)}
-              className="flex items-center gap-2 px-3 rounded-2xl font-bold text-sm text-white"
+              className="flex items-center gap-2 px-3 rounded-full font-bold text-sm text-ink"
               style={{ background: C.surface2, minHeight: 56 }}>
-              <Icon size={18} style={{ color: C.brand, flexShrink: 0 }} />{label}
+              <Icon size={18} style={{ color: C.brandText, flexShrink: 0 }} />{label}
             </button>
           ))}
         </div>
@@ -225,20 +225,20 @@ export default function CajaPage() {
           <div className="flex items-center justify-between mb-2">
             <Label className="mb-0">MOVIMIENTOS {filtro !== 'todas' && `· ${nombreCuenta(filtro).toUpperCase()}`}</Label>
             {filtro !== 'todas' && (
-              <button type="button" onClick={() => setFiltro('todas')} className="text-xs font-bold px-3 rounded-lg"
-                style={{ color: C.brand, background: C.surface2 }}>Ver todas</button>
+              <button type="button" onClick={() => setFiltro('todas')} className="text-xs font-bold px-3 rounded-full"
+                style={{ color: C.brandText, background: C.surface2 }}>Ver todas</button>
             )}
           </div>
           {movsFiltrados.length === 0 ? (
-            <p className="text-sm text-center py-6" style={{ color: '#444' }}>Sin movimientos</p>
+            <p className="text-sm text-center py-6" style={{ color: 'var(--ink-mute)' }}>Sin movimientos</p>
           ) : (
             <div className="space-y-2">
               {movsFiltrados.map((m) => {
                 const pos = Number(m.monto) >= 0;
                 return (
-                  <div key={m.id} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: C.surface }}>
+                  <div key={m.id} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-white font-medium truncate">{m.descripcion || TIPOS_MOVIMIENTO[m.tipo]}</p>
+                      <p className="text-sm text-ink font-medium truncate">{m.descripcion || TIPOS_MOVIMIENTO[m.tipo]}</p>
                       <p className="text-xs truncate" style={{ color: C.dimmer }}>
                         {TIPOS_MOVIMIENTO[m.tipo]} · {nombreCuenta(m.cuenta_id)} · {formatFechaHora(m.fecha)}
                       </p>
@@ -257,10 +257,10 @@ export default function CajaPage() {
       {/* ── Hoja de acción ── */}
       <Sheet open={!!accion} title={titulos[accion]} onClose={cerrar}>
         {accion === 'corte' && corteHoy ? (
-          <div className="rounded-2xl p-4 space-y-1" style={{ background: C.surface }}>
+          <div className="rounded-2xl p-4 space-y-1" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
             <p className="text-sm" style={{ color: C.dim }}>Ya hiciste el corte de hoy.</p>
-            <p className="text-white">Esperado: <b>{formatMXN(corteHoy.saldo_esperado)}</b></p>
-            <p className="text-white">Contado: <b>{formatMXN(corteHoy.saldo_contado)}</b></p>
+            <p className="text-ink">Esperado: <b>{formatMXN(corteHoy.saldo_esperado)}</b></p>
+            <p className="text-ink">Contado: <b>{formatMXN(corteHoy.saldo_contado)}</b></p>
             <p className="font-bold text-lg" style={{ color: Number(corteHoy.diferencia) === 0 ? C.ok : Number(corteHoy.diferencia) < 0 ? C.bad : C.warn }}>
               Diferencia: {formatMXN(corteHoy.diferencia)}
             </p>
@@ -268,20 +268,20 @@ export default function CajaPage() {
         ) : (
           <>
             {accion === 'corte' && (
-              <div className="rounded-2xl p-4" style={{ background: C.surface }}>
+              <div className="rounded-2xl p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                 <p className="text-xs" style={{ color: C.dim }}>Efectivo que debería haber en caja</p>
-                <p className="text-2xl font-bold text-white">{esperadoCorte === null ? '…' : formatMXN(esperadoCorte)}</p>
+                <p className="text-2xl font-bold text-ink">{esperadoCorte === null ? '…' : formatMXN(esperadoCorte)}</p>
               </div>
             )}
             {accion === 'didi' && (
-              <div className="rounded-2xl p-4" style={{ background: C.surface }}>
+              <div className="rounded-2xl p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                 <p className="text-xs" style={{ color: C.dim }}>Didi te debe según tus ventas</p>
-                <p className="text-2xl font-bold text-white">{formatMXN(didi?.saldo || 0)}</p>
+                <p className="text-2xl font-bold text-ink">{formatMXN(didi?.saldo || 0)}</p>
               </div>
             )}
 
             <div>
-              <Label color={C.brand}>
+              <Label color={C.brandText}>
                 {accion === 'corte' ? '¿CUÁNTO CONTASTE?' : accion === 'didi' ? '¿CUÁNTO DEPOSITÓ DIDI?' : '¿CUÁNTO?'}
               </Label>
               <MontoInput value={monto} onChange={setMonto} autoFocus />

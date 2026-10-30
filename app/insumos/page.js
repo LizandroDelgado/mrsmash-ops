@@ -2,11 +2,13 @@
 import { useEffect, useState } from 'react';
 import { Trash2, ChevronLeft, ChevronRight, Package } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
+import { Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { diaOperativo, sumarDias, formatDiaCorto } from '@/lib/dia';
 import { METODOS_COMPRA } from '@/lib/negocio';
 import DesgloseCompra from '@/components/DesgloseCompra';
+import MasMenu from '@/components/MasMenu';
 
 const CATEGORIAS = ['Carne', 'Pan', 'Verdura', 'Salsas', 'Empaque', 'Otro'];
 
@@ -153,19 +155,14 @@ export default function InsumosPage() {
   const hoyStr = diaOperativo();
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
-      <header
-        className="sticky top-0 z-40 px-4 py-3"
-        style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}
-      >
-        <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
-      </header>
+    <div className="flex flex-col min-h-screen" style={{ background: 'var(--cream)' }}>
+      <Header titulo="Compras de insumos" right={<MasMenu />} />
 
       <main className="flex-1 px-4 pt-4 pb-32 space-y-5">
 
         {/* ── DESCRIPCIÓN ── */}
         <div>
-          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#FF4D00' }}>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--orange-text)' }}>
             ¿QUÉ COMPRASTE?
           </p>
           <input
@@ -173,43 +170,43 @@ export default function InsumosPage() {
             value={descripcion}
             onChange={(e) => setDescripcion(e.target.value)}
             placeholder="Ej: Carne 5kg, Pan 30 piezas, Salsas..."
-            className="w-full px-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none"
-            style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 16 }}
+            className="w-full px-4 py-3 rounded-xl text-ink outline-none"
+            style={{ background: 'var(--paper)', border: '1px solid var(--line)', fontSize: 16 }}
           />
         </div>
 
         {/* ── MONTO ── */}
         <div>
-          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>
             ¿CUÁNTO PAGASTE?
           </p>
           <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-lg" style={{ color: '#888' }}>$</span>
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-lg" style={{ color: 'var(--ink-soft)' }}>$</span>
             <input
               type="number"
               inputMode="decimal"
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
               placeholder="0"
-              className="w-full pl-10 pr-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none font-bold"
-              style={{ background: '#141414', border: '1px solid #2a2a2a', fontSize: 20 }}
+              className="w-full pl-10 pr-4 py-3 rounded-xl text-ink outline-none font-bold"
+              style={{ background: 'var(--paper)', border: '1px solid var(--line)', fontSize: 20 }}
             />
           </div>
         </div>
 
         {/* ── CATEGORÍA ── */}
         <div>
-          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>CATEGORÍA</p>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>CATEGORÍA</p>
           <div className="flex flex-wrap gap-2">
             {CATEGORIAS.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategoria(cat)}
-                className="px-4 py-2 rounded-xl font-medium text-sm"
+                className="px-4 py-2 rounded-full font-medium text-sm"
                 style={{
-                  background: categoria === cat ? '#FF4D00' : '#141414',
-                  color:      categoria === cat ? '#fff'    : '#888',
-                  border:     `1px solid ${categoria === cat ? '#FF4D00' : '#2a2a2a'}`,
+                  background: categoria === cat ? 'var(--orange-fill)' : 'var(--paper)',
+                  color:      categoria === cat ? 'var(--on-orange)'    : 'var(--ink-soft)',
+                  border:     `1px solid ${categoria === cat ? 'var(--orange-fill)' : 'var(--line)'}`,
                 }}
               >
                 {cat}
@@ -220,22 +217,22 @@ export default function InsumosPage() {
 
         {/* ── FORMA DE PAGO ── */}
         <div>
-          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>¿CÓMO PAGASTE?</p>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>¿CÓMO PAGASTE?</p>
           <div className="flex gap-2">
             {METODOS_COMPRA.map(({ key, label }) => (
               <button key={key} onClick={() => setMetodoPago(key)}
-                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                className="flex-1 py-3 rounded-full font-bold text-sm"
                 style={{
-                  background: metodoPago === key ? '#FF4D00' : '#141414',
-                  color:      metodoPago === key ? '#fff'    : '#888',
-                  border:     `1px solid ${metodoPago === key ? '#FF4D00' : '#2a2a2a'}`,
+                  background: metodoPago === key ? 'var(--orange-fill)' : 'var(--paper)',
+                  color:      metodoPago === key ? 'var(--on-orange)'    : 'var(--ink-soft)',
+                  border:     `1px solid ${metodoPago === key ? 'var(--orange-fill)' : 'var(--line)'}`,
                 }}>
                 {label}
               </button>
             ))}
           </div>
           {metodoPago === 'credito' && (
-            <p className="text-xs mt-2 px-1" style={{ color: '#eab308' }}>
+            <p className="text-xs mt-2 px-1" style={{ color: 'var(--warn-ink)' }}>
               Se agenda en Gastos → Por pagar, vence el {formatDiaCorto(vencimiento)}
               {!proveedorSel && ' (elige proveedor para usar sus días de crédito)'}
             </p>
@@ -245,15 +242,15 @@ export default function InsumosPage() {
         {/* ── PROVEEDOR ── */}
         {proveedores.length > 0 && (
           <div>
-            <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>PROVEEDOR (OPCIONAL)</p>
+            <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>PROVEEDOR (OPCIONAL)</p>
             <div className="flex flex-wrap gap-2">
               {proveedores.map((p) => (
                 <button key={p.id} onClick={() => setProveedorId(proveedorId === p.id ? null : p.id)}
-                  className="px-4 py-2 rounded-xl font-medium text-sm"
+                  className="px-4 py-2 rounded-full font-medium text-sm"
                   style={{
-                    background: proveedorId === p.id ? '#FF4D00' : '#141414',
-                    color:      proveedorId === p.id ? '#fff'    : '#888',
-                    border:     `1px solid ${proveedorId === p.id ? '#FF4D00' : '#2a2a2a'}`,
+                    background: proveedorId === p.id ? 'var(--orange-fill)' : 'var(--paper)',
+                    color:      proveedorId === p.id ? 'var(--on-orange)'    : 'var(--ink-soft)',
+                    border:     `1px solid ${proveedorId === p.id ? 'var(--orange-fill)' : 'var(--line)'}`,
                   }}>
                   {p.nombre}
                 </button>
@@ -264,7 +261,7 @@ export default function InsumosPage() {
 
         {/* ── FECHA ── */}
         <div>
-          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>FECHA</p>
+          <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>FECHA</p>
           <div className="flex gap-2">
             {[
               { key: 'hoy',  label: 'Hoy'  },
@@ -274,11 +271,11 @@ export default function InsumosPage() {
               <button
                 key={key}
                 onClick={() => setFechaOpt(key)}
-                className="flex-1 py-3 rounded-xl font-bold text-sm"
+                className="flex-1 py-3 rounded-full font-bold text-sm"
                 style={{
-                  background: fechaOpt === key ? '#FF4D00' : '#141414',
-                  color:      fechaOpt === key ? '#fff'    : '#888',
-                  border:     `1px solid ${fechaOpt === key ? '#FF4D00' : '#2a2a2a'}`,
+                  background: fechaOpt === key ? 'var(--orange-fill)' : 'var(--paper)',
+                  color:      fechaOpt === key ? 'var(--on-orange)'    : 'var(--ink-soft)',
+                  border:     `1px solid ${fechaOpt === key ? 'var(--orange-fill)' : 'var(--line)'}`,
                 }}
               >
                 {label}
@@ -291,12 +288,11 @@ export default function InsumosPage() {
               value={fechaPersonalizada}
               max={hoyStr}
               onChange={(e) => setFechaPersonalizada(e.target.value)}
-              className="mt-2 w-full px-4 py-3 rounded-xl text-white outline-none"
+              className="mt-2 w-full px-4 py-3 rounded-xl text-ink outline-none"
               style={{
-                background:  '#141414',
-                border:      '1px solid #FF4D00',
+                background:  'var(--paper)',
+                border:      '1px solid var(--orange)',
                 fontSize:    16,
-                colorScheme: 'dark',
               }}
             />
           )}
@@ -306,60 +302,57 @@ export default function InsumosPage() {
         <button
           onClick={guardar}
           disabled={!canSave || guardando}
-          className="w-full py-4 rounded-2xl font-bold text-lg"
-          style={{
-            background: canSave ? '#FF4D00' : '#1e1e1e',
-            color:      canSave ? '#fff'    : '#444',
-          }}
+          className="btn-primary w-full py-3 rounded-full text-xl"
+          style={{ minHeight: 56 }}
         >
           {guardando ? 'Guardando...' : 'GUARDAR COMPRA'}
         </button>
 
         {/* ── DESGLOSE OPCIONAL DE LA ÚLTIMA COMPRA ── */}
         {ultimaCompra && (
-          <div className="rounded-2xl p-3 space-y-2" style={{ background: '#22c55e14', border: '1px solid #22c55e55' }}>
-            <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
+          <div className="rounded-2xl p-3 space-y-2" style={{ background: 'var(--good-soft)', border: '1px solid var(--good-line)' }}>
+            <p className="text-sm font-bold" style={{ color: 'var(--good-ink)' }}>
               ✓ Guardada: {ultimaCompra.descripcion} · {formatMXN(ultimaCompra.monto)}
             </p>
             <button onClick={() => { setDesglose(ultimaCompra); setUltimaCompra(null); }}
-              className="w-full flex items-center justify-center gap-2 rounded-xl font-bold"
-              style={{ background: '#FF4D00', color: '#fff', minHeight: 52 }}>
+              className="w-full flex items-center justify-center gap-2 rounded-full font-bold"
+              style={{ background: 'var(--orange-fill)', color: 'var(--on-orange)', minHeight: 52 }}>
               <Package size={18} /> Agregar insumos de esta compra
             </button>
-            <p className="text-xs text-center" style={{ color: '#666' }}>
+            <p className="text-xs text-center" style={{ color: 'var(--ink-mute)' }}>
               Opcional: así entra al inventario y se actualiza el costo de tus recetas
             </p>
           </div>
         )}
 
         {/* ── DIVISOR ── */}
-        <div style={{ borderTop: '1px solid #1e1e1e', marginTop: 8 }} />
+        <div style={{ borderTop: '1px solid var(--paper-2)', marginTop: 8 }} />
 
         {/* ── SELECTOR DE SEMANA ── */}
         <div
           className="flex items-center justify-between px-3 py-2 rounded-xl"
-          style={{ background: '#141414', border: '1px solid #2a2a2a' }}
+          style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}
         >
           <button
             onClick={() => setSemanaOffset((o) => o - 1)}
-            className="p-2 rounded-lg"
-            style={{ background: '#1e1e1e' }}
+            className="p-2 rounded-full"
+            style={{ background: 'var(--paper-2)' }}
           >
-            <ChevronLeft size={18} style={{ color: '#aaa' }} />
+            <ChevronLeft size={18} style={{ color: 'var(--ink-soft)' }} />
           </button>
           <div className="text-center">
-            <p className="text-sm font-bold text-white">{rango.label}</p>
-            <p className="text-xs" style={{ color: semanaOffset === 0 ? '#FF4D00' : '#666' }}>
+            <p className="text-sm font-bold text-ink">{rango.label}</p>
+            <p className="text-xs" style={{ color: semanaOffset === 0 ? 'var(--orange-text)' : 'var(--ink-mute)' }}>
               {semanaOffset === 0 ? 'Semana actual' : semanaOffset === -1 ? 'Semana pasada' : `Hace ${Math.abs(semanaOffset)} semanas`}
             </p>
           </div>
           <button
             onClick={() => setSemanaOffset((o) => Math.min(0, o + 1))}
             disabled={semanaOffset === 0}
-            className="p-2 rounded-lg"
-            style={{ background: '#1e1e1e', opacity: semanaOffset === 0 ? 0.3 : 1 }}
+            className="p-2 rounded-full"
+            style={{ background: 'var(--paper-2)', opacity: semanaOffset === 0 ? 0.3 : 1 }}
           >
-            <ChevronRight size={18} style={{ color: '#aaa' }} />
+            <ChevronRight size={18} style={{ color: 'var(--ink-soft)' }} />
           </button>
         </div>
 
@@ -367,10 +360,10 @@ export default function InsumosPage() {
         {loadingCompras ? (
           <div className="flex justify-center py-8">
             <div className="w-7 h-7 rounded-full border-2 animate-spin"
-              style={{ borderColor: '#FF4D00', borderTopColor: 'transparent' }} />
+              style={{ borderColor: 'var(--orange)', borderTopColor: 'transparent' }} />
           </div>
         ) : compras.length === 0 ? (
-          <div className="text-center py-8" style={{ color: '#444' }}>
+          <div className="text-center py-8" style={{ color: 'var(--ink-mute)' }}>
             <p className="text-2xl mb-2">📦</p>
             <p className="text-sm">Sin compras esta semana</p>
           </div>
@@ -378,10 +371,10 @@ export default function InsumosPage() {
           <div className="space-y-4">
             {/* Total de la semana */}
             <div className="flex items-center justify-between px-1">
-              <p className="text-xs font-bold tracking-wider" style={{ color: '#888' }}>
+              <p className="text-xs font-bold tracking-wider" style={{ color: 'var(--ink-soft)' }}>
                 TOTAL SEMANA
               </p>
-              <p className="font-bold text-white text-lg">{formatMXN(totalSemana)}</p>
+              <p className="font-bold text-ink text-lg">{formatMXN(totalSemana)}</p>
             </div>
 
             {/* Compras agrupadas por día */}
@@ -392,10 +385,10 @@ export default function InsumosPage() {
                 <div key={fecha}>
                   {/* Encabezado del día */}
                   <div className="flex items-center justify-between mb-2 px-1">
-                    <p className="text-xs font-bold" style={{ color: '#FF4D00' }}>
+                    <p className="text-xs font-bold" style={{ color: 'var(--orange-text)' }}>
                       {formatDiaLabel(fecha).toUpperCase()}
                     </p>
-                    <p className="text-xs font-bold" style={{ color: '#888' }}>
+                    <p className="text-xs font-bold" style={{ color: 'var(--ink-soft)' }}>
                       {formatMXN(subtotal)}
                     </p>
                   </div>
@@ -403,40 +396,40 @@ export default function InsumosPage() {
                   {/* Items del día */}
                   <div className="space-y-2">
                     {items.map((c) => (
-                      <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: '#141414' }}>
+                      <div key={c.id} className="rounded-xl overflow-hidden" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex-1 min-w-0">
-                            <p className="text-white text-sm font-medium truncate">{c.descripcion}</p>
-                            <p className="text-xs mt-0.5" style={{ color: c.metodo_pago === 'credito' ? '#eab308' : '#666' }}>
+                            <p className="text-ink text-sm font-medium truncate">{c.descripcion}</p>
+                            <p className="text-xs mt-0.5" style={{ color: c.metodo_pago === 'credito' ? 'var(--warn-ink)' : 'var(--ink-mute)' }}>
                               {c.categoria}{c.metodo_pago ? ` · ${c.metodo_pago === 'credito' ? 'a crédito' : c.metodo_pago}` : ''}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 ml-3">
-                            <span className="font-bold text-white">{formatMXN(c.monto)}</span>
+                            <span className="font-bold text-ink">{formatMXN(c.monto)}</span>
                             <button
                               onClick={() => setDesglose(c)}
                               aria-label="Insumos de esta compra"
-                              className="p-2 rounded-lg flex items-center gap-1"
-                              style={{ background: c.compra_items?.length ? '#22c55e22' : '#1e1e1e' }}
+                              className="p-2 rounded-full flex items-center gap-1"
+                              style={{ background: c.compra_items?.length ? 'var(--good-soft)' : 'var(--paper-2)' }}
                             >
-                              <Package size={15} style={{ color: c.compra_items?.length ? '#22c55e' : '#555' }} />
+                              <Package size={15} style={{ color: c.compra_items?.length ? 'var(--good-ink)' : 'var(--ink-mute)' }} />
                               {c.compra_items?.length > 0 && (
-                                <span className="text-xs font-bold" style={{ color: '#22c55e' }}>{c.compra_items.length}</span>
+                                <span className="text-xs font-bold" style={{ color: 'var(--good-ink)' }}>{c.compra_items.length}</span>
                               )}
                             </button>
                             <button
                               onClick={() => { setEditandoFechaInsumo(editandoFechaInsumo === c.id ? null : c.id); setNuevaFechaInsumo(c.fecha); setConfirmEliminar(null); }}
-                              className="p-2 rounded-lg"
-                              style={{ background: editandoFechaInsumo === c.id ? '#FF4D0022' : '#1e1e1e' }}
+                              className="p-2 rounded-full"
+                              style={{ background: editandoFechaInsumo === c.id ? 'var(--orange-soft)' : 'var(--paper-2)' }}
                             >
-                              <span style={{ fontSize: 13, color: editandoFechaInsumo === c.id ? '#FF4D00' : '#555' }}>✏️</span>
+                              <span style={{ fontSize: 13, color: editandoFechaInsumo === c.id ? 'var(--orange-text)' : 'var(--ink-mute)' }}>✏️</span>
                             </button>
                             <button
                               onClick={() => { setConfirmEliminar(confirmEliminar === c.id ? null : c.id); setEditandoFechaInsumo(null); }}
-                              className="p-2 rounded-lg"
-                              style={{ background: confirmEliminar === c.id ? '#ef444422' : '#1e1e1e' }}
+                              className="p-2 rounded-full"
+                              style={{ background: confirmEliminar === c.id ? 'var(--bad-soft)' : 'var(--paper-2)' }}
                             >
-                              <Trash2 size={15} style={{ color: confirmEliminar === c.id ? '#ef4444' : '#555' }} />
+                              <Trash2 size={15} style={{ color: confirmEliminar === c.id ? 'var(--bad-ink)' : 'var(--ink-mute)' }} />
                             </button>
                           </div>
                         </div>
@@ -447,20 +440,20 @@ export default function InsumosPage() {
                               value={nuevaFechaInsumo}
                               max={hoyStr}
                               onChange={(e) => setNuevaFechaInsumo(e.target.value)}
-                              className="flex-1 px-3 py-2 rounded-xl text-white outline-none text-sm"
-                              style={{ background: '#1e1e1e', border: '1px solid #FF4D00', colorScheme: 'dark' }}
+                              className="flex-1 px-3 py-2 rounded-xl text-ink outline-none text-sm"
+                              style={{ background: 'var(--paper-2)', border: '1px solid var(--orange)' }}
                             />
                             <button
                               onClick={() => nuevaFechaInsumo && cambiarFechaInsumo(c.id, nuevaFechaInsumo)}
                               disabled={!nuevaFechaInsumo}
-                              className="px-4 py-2 rounded-xl font-bold text-sm"
-                              style={{ background: nuevaFechaInsumo ? '#FF4D00' : '#2a2a2a', color: nuevaFechaInsumo ? '#fff' : '#555' }}>
+                              className="px-4 py-2 rounded-full font-bold text-sm"
+                              style={{ background: nuevaFechaInsumo ? 'var(--orange-fill)' : 'var(--line)', color: nuevaFechaInsumo ? 'var(--on-orange)' : 'var(--ink-mute)' }}>
                               Guardar
                             </button>
                             <button
                               onClick={() => setEditandoFechaInsumo(null)}
-                              className="px-3 py-2 rounded-xl text-sm"
-                              style={{ background: '#1e1e1e', color: '#888' }}>
+                              className="px-3 py-2 rounded-full text-sm"
+                              style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}>
                               Cancelar
                             </button>
                           </div>
@@ -469,15 +462,15 @@ export default function InsumosPage() {
                           <div className="flex gap-2 px-4 pb-3">
                             <button
                               onClick={() => setConfirmEliminar(null)}
-                              className="flex-1 py-2 rounded-xl text-sm font-bold"
-                              style={{ background: '#1e1e1e', color: '#888' }}
+                              className="flex-1 py-2 rounded-full text-sm font-bold"
+                              style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}
                             >
                               Cancelar
                             </button>
                             <button
                               onClick={() => eliminarCompra(c.id)}
-                              className="flex-1 py-2 rounded-xl text-sm font-bold"
-                              style={{ background: '#ef444422', color: '#ef4444' }}
+                              className="flex-1 py-2 rounded-full text-sm font-bold"
+                              style={{ background: 'var(--bad-soft)', color: 'var(--bad-ink)' }}
                             >
                               Confirmar borrar
                             </button>

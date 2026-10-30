@@ -103,8 +103,8 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
 
   return (
     <Sheet open title="Insumos de esta compra" onClose={onClose}>
-      <div className="rounded-2xl px-4 py-3" style={{ background: C.surface }}>
-        <p className="text-sm text-white truncate">{compra.descripcion}</p>
+      <div className="rounded-2xl px-4 py-3" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+        <p className="text-sm text-ink truncate">{compra.descripcion}</p>
         <p className="text-xs mt-1" style={{ color: restante > 0.5 ? C.warn : C.ok }}>
           Desglosado {formatMXN(desglosado)} de {formatMXN(Number(compra.monto))}
         </p>
@@ -117,16 +117,16 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
             const u = UNIDAD_GRANDE[i.insumos?.unidad_base] || UNIDAD_GRANDE.pza;
             return (
               <div key={i.id} className="flex items-center justify-between px-4 rounded-xl"
-                style={{ background: C.surface, minHeight: 56 }}>
+                style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 56 }}>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{i.insumos?.nombre}</p>
+                  <p className="text-sm font-bold text-ink truncate">{i.insumos?.nombre}</p>
                   <p className="text-xs" style={{ color: C.dimmer }}>
                     {Number(i.cantidad)} {i.unidad_compra} · {formatMXN(Number(i.costo_total))}
                     {base > 0 && ` · ${formatMXN2((Number(i.costo_total) / base) * u.factor)}/${u.label}`}
                   </p>
                 </div>
                 <button type="button" onClick={() => quitar(i.id)} aria-label="Quitar"
-                  className="flex items-center justify-center rounded-xl shrink-0"
+                  className="flex items-center justify-center rounded-full shrink-0"
                   style={{ width: 48, height: 48, background: C.surface2 }}>
                   <Trash2 size={16} style={{ color: C.dimmer }} />
                 </button>
@@ -145,8 +145,8 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
       ) : (
         <div className="space-y-3 rounded-2xl p-3" style={{ background: C.surface, border: `1px solid ${C.brand}` }}>
           <div className="flex items-center justify-between">
-            <p className="font-bold text-white">{sel.nombre}</p>
-            <button type="button" onClick={() => setSel(null)} className="px-3 rounded-xl text-sm"
+            <p className="font-bold text-ink">{sel.nombre}</p>
+            <button type="button" onClick={() => setSel(null)} className="px-3 rounded-full text-sm"
               style={{ background: C.surface2, color: C.dim, minHeight: 48 }}>Cambiar</button>
           </div>
           <Chips options={UNIDADES_COMPRA[sel.unidad_base]} value={uCompra} onChange={setUCompra} />

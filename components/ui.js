@@ -1,17 +1,58 @@
 'use client';
-// Piezas compartidas para las pantallas del ERP. Mismos colores y radios que el resto de la app.
-import { X } from 'lucide-react';
+// Piezas compartidas. Los colores son tokens de marca (app/globals.css): nunca hex aquí.
+import Link from 'next/link';
+import { X, ChevronLeft } from 'lucide-react';
 
+const v = (n) => `var(--${n})`;
 export const C = {
-  brand: '#FF4D00', bg: '#0a0a0a', surface: '#141414', surface2: '#1e1e1e',
-  border: '#2a2a2a', dim: '#888', dimmer: '#666', ok: '#22c55e', warn: '#eab308', bad: '#ef4444',
+  // superficies y texto
+  bg: v('cream'), surface: v('paper'), surface2: v('paper-2'), border: v('line'),
+  ink: v('ink'), dim: v('ink-soft'), dimmer: v('ink-mute'),
+  // marca
+  brand: v('orange'), brandDeep: v('orange-deep'), brandText: v('orange-text'), brandFill: v('orange-fill'),
+  onBrand: v('on-orange'), brandSoft: v('orange-soft'), brandLine: v('orange-line'),
+  // semánticos (texto AA en ambos temas) y sus fondos suaves
+  ok: v('good-ink'), warn: v('warn-ink'), bad: v('bad-ink'), onBad: v('on-bad'),
+  okSoft: v('good-soft'), warnSoft: v('warn-soft'), badSoft: v('bad-soft'),
+  okLine: v('good-line'), warnLine: v('warn-line'), badLine: v('bad-line'),
+  // banda oscura fija
+  band: v('band'), bandInk: v('band-ink'), bandInkSoft: v('band-ink-soft'), bandLine: v('band-line'),
+  bandGood: v('band-good'), bandWarn: v('band-warn'), bandBad: v('band-bad'), bandAccent: v('band-accent'),
+  overlay: v('overlay'),
 };
 
-export function Header({ right }) {
+export function Logo({ height = 32 }) {
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3"
-      style={{ background: C.bg, borderBottom: `1px solid ${C.surface2}` }}>
-      <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
+    <>
+      <img src="/brand/mrsmash-logo.png" alt="MR. SMASH" className="logo-light" style={{ height, width: 'auto' }} />
+      <img src="/brand/mrsmash-logo-white.png" alt="MR. SMASH" className="logo-dark" style={{ height, width: 'auto' }} />
+    </>
+  );
+}
+
+// Encabezado: logo + título de la pantalla en Fredoka. back = href o función para "volver".
+export function Header({ titulo, subtitulo, right, back }) {
+  const btnBack = { width: 44, height: 44, minHeight: 44, background: C.surface2 };
+  return (
+    <header className="sticky top-0 z-40 flex items-center gap-3 px-4"
+      style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, minHeight: 60 }}>
+      {back && (typeof back === 'string' ? (
+        <Link href={back} aria-label="Volver" className="flex items-center justify-center rounded-full shrink-0" style={btnBack}>
+          <ChevronLeft size={22} style={{ color: C.ink }} />
+        </Link>
+      ) : (
+        <button type="button" onClick={back} aria-label="Volver" className="flex items-center justify-center rounded-full shrink-0" style={btnBack}>
+          <ChevronLeft size={22} style={{ color: C.ink }} />
+        </button>
+      ))}
+      {!back && <span className="shrink-0 flex items-center"><Logo /></span>}
+      {titulo && (
+        <div className="flex-1 min-w-0">
+          <h1 className="truncate text-lg leading-tight" style={{ color: C.ink, fontWeight: 600 }}>{titulo}</h1>
+          {subtitulo && <p className="text-xs truncate" style={{ color: C.dim }}>{subtitulo}</p>}
+        </div>
+      )}
+      {!titulo && <span className="flex-1" />}
       {right}
     </header>
   );
@@ -21,20 +62,29 @@ export function Label({ children, color = C.dim, className = '' }) {
   return <p className={`text-xs font-bold tracking-wider mb-2 ${className}`} style={{ color }}>{children}</p>;
 }
 
-// Selector de opciones en chips grandes. options: [{ key, label }]
+// Tarjeta base: paper, radio 22, borde line, sin sombra
+export function Card({ children, className = '', style }) {
+  return (
+    <div className={`rounded-card p-4 ${className}`} style={{ background: C.surface, border: `1px solid ${C.border}`, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+// Selector de opciones en chips (pastilla). Seleccionado: relleno naranja (orange-fill: AA con texto chico).
 export function Chips({ options, value, onChange, wrap = false }) {
   return (
     <div className={`flex gap-2 ${wrap ? 'flex-wrap' : ''}`}>
       {options.map(({ key, label }) => {
         const activo = value === key;
         return (
-          <button key={String(key)} type="button" onClick={() => onChange(key)}
-            className={`${wrap ? 'px-4' : 'flex-1 px-1'} py-3 rounded-xl font-bold text-sm`}
+          <button key={String(key)} type="button" onClick={() => onChange(key)} aria-pressed={activo}
+            className={`${wrap ? 'px-4' : 'flex-1 px-1'} py-3 rounded-full text-sm`}
             style={{
               minHeight: 48,
-              background: activo ? C.brand : C.surface,
-              color:      activo ? '#fff'  : C.dim,
-              border:     `1px solid ${activo ? C.brand : C.border}`,
+              background: activo ? C.brandFill : C.surface,
+              color:      activo ? C.onBrand : C.ink,
+              border:     `1px solid ${activo ? C.brandFill : C.border}`,
             }}>
             {label}
           </button>
@@ -44,14 +94,16 @@ export function Chips({ options, value, onChange, wrap = false }) {
   );
 }
 
+const inputStyle = { background: C.surface, border: `1px solid ${C.border}`, color: C.ink, borderRadius: 14 };
+
 export function MontoInput({ value, onChange, autoFocus = false, placeholder = '0' }) {
   return (
     <div className="relative">
-      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-lg" style={{ color: C.dim }}>$</span>
+      <span className="absolute left-4 top-1/2 -translate-y-1/2 font-display text-lg" style={{ color: C.dim, fontWeight: 600 }}>$</span>
       <input type="number" inputMode="decimal" step="0.01" value={value} autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className="w-full pl-10 pr-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none font-bold"
-        style={{ background: C.surface, border: `1px solid ${C.border}`, fontSize: 22, minHeight: 56 }} />
+        className="w-full pl-10 pr-4 py-3 outline-none font-display"
+        style={{ ...inputStyle, fontSize: 22, fontWeight: 600, minHeight: 56 }} />
     </div>
   );
 }
@@ -63,9 +115,8 @@ export function CantidadInput({ value, onChange, unidad, autoFocus = false, big 
       <input type="number" inputMode="decimal" step="any" value={value} autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
         onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) onEnter(); }}
-        className="w-full pl-4 pr-16 rounded-xl text-white placeholder-zinc-600 outline-none font-bold"
-        style={{ background: C.surface, border: `1px solid ${C.border}`, fontSize: big ? 40 : 20,
-                 minHeight: big ? 88 : 52 }} />
+        className="w-full pl-4 pr-16 outline-none font-display"
+        style={{ ...inputStyle, fontSize: big ? 40 : 20, fontWeight: 600, minHeight: big ? 88 : 52 }} />
       <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold" style={{ color: C.dim, fontSize: big ? 22 : 16 }}>
         {unidad}
       </span>
@@ -77,16 +128,32 @@ export function TextInput({ value, onChange, placeholder, type = 'text', inputMo
   return (
     <input type={type} inputMode={inputMode} value={value} onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full px-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none"
-      style={{ background: C.surface, border: `1px solid ${C.border}`, fontSize: 16, minHeight: 48, colorScheme: 'dark' }} />
+      className="w-full px-4 py-3 outline-none"
+      style={{ ...inputStyle, fontSize: 16, minHeight: 48 }} />
   );
 }
 
-export function BotonPrincipal({ children, onClick, disabled, color = C.brand }) {
+// Botón principal: pastilla naranja, Fredoka 600 de 20px (texto grande: AA 3:1 con blanco).
+// variante "peligro" para acciones destructivas o de pérdida (merma).
+export function BotonPrincipal({ children, onClick, disabled, variante = 'principal' }) {
+  const peligro = variante === 'peligro';
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      className="w-full py-4 rounded-2xl font-bold text-lg"
-      style={{ background: disabled ? C.surface2 : color, color: disabled ? '#444' : '#fff', minHeight: 56 }}>
+      className={`w-full py-3 rounded-full text-xl ${peligro ? '' : 'btn-primary'}`}
+      style={peligro
+        ? { background: disabled ? C.surface2 : C.bad, color: disabled ? C.dimmer : C.onBad, minHeight: 56, fontWeight: 600 }
+        : { minHeight: 56, fontWeight: 600 }}>
+      {children}
+    </button>
+  );
+}
+
+// Botón secundario: pastilla con borde
+export function BotonSecundario({ children, onClick, disabled, peligro = false, className = '' }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className={`w-full px-4 rounded-full text-base ${className}`}
+      style={{ background: C.surface, border: `1px solid ${C.border}`, color: peligro ? C.bad : C.ink, minHeight: 48 }}>
       {children}
     </button>
   );
@@ -96,17 +163,17 @@ export function BotonPrincipal({ children, onClick, disabled, color = C.brand })
 export function Sheet({ open, title, onClose, children }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.7)' }}
+    <div className="fixed inset-0 z-[60] flex flex-col justify-end" style={{ background: C.overlay }}
       onClick={onClose}>
-      <div className="rounded-t-3xl px-4 pt-3 space-y-4 overflow-y-auto"
-        style={{ background: C.bg, border: `1px solid ${C.border}`, maxHeight: '92vh',
-                 paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
+      <div className="px-4 pt-3 space-y-4 overflow-y-auto"
+        style={{ background: C.bg, borderTop: `1px solid ${C.border}`, maxHeight: '92vh',
+                 borderRadius: '22px 22px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="font-bold text-lg text-white">{title}</p>
+          <h2 className="text-xl" style={{ color: C.ink, fontWeight: 600 }}>{title}</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar"
-            className="flex items-center justify-center rounded-xl" style={{ width: 48, background: C.surface2 }}>
-            <X size={20} style={{ color: C.dim }} />
+            className="flex items-center justify-center rounded-full" style={{ width: 48, background: C.surface, border: `1px solid ${C.border}` }}>
+            <X size={20} style={{ color: C.ink }} />
           </button>
         </div>
         {children}
@@ -115,16 +182,16 @@ export function Sheet({ open, title, onClose, children }) {
   );
 }
 
-export function Vacio({ emoji, titulo, texto, accion, onAccion }) {
+// Estado vacío: mascota, título en Fredoka y botón principal hacia la captura
+export function Vacio({ titulo, texto, accion, onAccion }) {
   return (
-    <div className="flex flex-col items-center text-center gap-3 py-8 px-4 rounded-2xl"
+    <div className="flex flex-col items-center text-center gap-3 py-8 px-4 rounded-card"
       style={{ background: C.surface, border: `1px dashed ${C.border}` }}>
-      <p className="text-4xl">{emoji}</p>
-      <p className="font-bold text-white">{titulo}</p>
+      <Logo height={44} />
+      <h2 className="text-xl" style={{ color: C.ink, fontWeight: 600 }}>{titulo}</h2>
       {texto && <p className="text-sm" style={{ color: C.dim }}>{texto}</p>}
       {accion && (
-        <button type="button" onClick={onAccion} className="px-5 py-3 rounded-xl font-bold text-sm"
-          style={{ background: C.brand, color: '#fff' }}>
+        <button type="button" onClick={onAccion} className="btn-primary px-6 rounded-full text-lg" style={{ minHeight: 52, fontWeight: 600 }}>
           {accion}
         </button>
       )}
@@ -134,7 +201,7 @@ export function Vacio({ emoji, titulo, texto, accion, onAccion }) {
 
 export function Cargando() {
   return (
-    <div className="flex justify-center py-12">
+    <div className="flex justify-center py-12" role="status" aria-label="Cargando">
       <div className="w-8 h-8 rounded-full border-2 animate-spin"
         style={{ borderColor: C.brand, borderTopColor: 'transparent' }} />
     </div>

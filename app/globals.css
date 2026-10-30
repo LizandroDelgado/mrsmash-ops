@@ -2,17 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   MR. SMASH · tokens de marca (misma identidad que la página pública)
+   Claro por default; oscuro con prefers-color-scheme o data-theme="dark" en <html>.
+   Única fuente de color de la app: los componentes usan var(--…) o las clases de Tailwind
+   que apuntan a estas variables (tailwind.config.js).
+   ============================================================ */
 :root {
-  --brand: #FF4D00;
-  --brand-dim: #CC3D00;
-  --bg: #0a0a0a;
-  --surface: #141414;
-  --surface2: #1e1e1e;
-  --border: #2a2a2a;
-  --text: #ffffff;
-  --text-dim: #888888;
-  --success: #22c55e;
-  --warning: #eab308;
+  color-scheme: light;
+  --cream: #FFF8EE;          /* fondo de página */
+  --paper: #FFFFFF;          /* tarjetas, header, nav */
+  --paper-2: #F7F0E6;        /* superficie secundaria dentro de tarjetas */
+  --ink: #1C1512;            /* texto */
+  --ink-soft: #5B5049;       /* texto secundario */
+  --ink-mute: #6E625A;       /* texto terciario (AA 4.5:1 sobre cream, paper y paper-2) */
+  --orange: #FF4D00;         /* acento, botón principal */
+  --orange-deep: #C93A00;    /* pressed / texto naranja sobre crema */
+  --orange-text: #B83500;    /* texto naranja (AA ≥ 5:1 en cream, paper, paper-2 y sobre orange-soft) */
+  --orange-fill: #C93A00;    /* relleno con texto chico encima (chips): blanco 5.1:1 */
+  --on-orange: #FFFFFF;      /* texto sobre naranja */
+  --orange-soft: rgba(255, 77, 0, 0.12);
+  --orange-line: rgba(255, 77, 0, 0.40);
+  --line: rgba(28, 21, 18, 0.12);
+
+  /* Semánticos: el naranja de marca nunca significa "malo" */
+  --good: #1F8A4C;  --good-ink: #17733F;  --good-soft: rgba(31, 138, 76, 0.12);  --good-line: rgba(31, 138, 76, 0.40);
+  --warn: #B7791F;  --warn-ink: #8C5A10;  --warn-soft: rgba(183, 121, 31, 0.12); --warn-line: rgba(183, 121, 31, 0.45);
+  --bad:  #C62828;  --bad-ink:  #C62828;  --bad-soft:  rgba(198, 40, 40, 0.12);  --bad-line:  rgba(198, 40, 40, 0.40);
+  --on-bad: #FFFFFF;
+
+  /* Banda oscura fija (hero "Dinero libre"), igual en ambos temas */
+  --band: #1C1512;
+  --band-ink: #FFF8EE;
+  --band-ink-soft: rgba(255, 248, 238, 0.78);
+  --band-line: rgba(255, 248, 238, 0.16);
+  --band-good: #3FBF74;      /* semáforo sobre la banda (contraste ≥ 4.5:1 sobre #1C1512) */
+  --band-warn: #E0A93B;
+  --band-bad: #EF5350;
+  --band-accent: #FF8A50;
+
+  /* Gráficas: canales con color fijo */
+  --ch-whatsapp: #FF4D00;
+  --ch-didi: #1C1512;
+  --ch-salon: #E0A93B;
+  --heat-0: #FFF1E2;         /* inicio de la escala del heatmap (crema → naranja) */
+  --overlay: rgba(28, 21, 18, 0.55);
+
+  --shadow-brand: 0 10px 24px -8px rgba(255, 77, 0, 0.55);
+  --radius-card: 22px;
+  --radius-input: 14px;
+}
+
+/* Tokens oscuros: se declaran dos veces (sistema y elección manual) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --cream: #171310; --paper: #221B16; --paper-2: #271F19;
+    --ink: #F7EFE6; --ink-soft: #C9BEB3; --ink-mute: #A3968A;
+    --orange: #FF6A2B; --orange-deep: #FF8A50; --orange-text: #FF8A50; --orange-fill: #FF6A2B;
+    --on-orange: #1C1512;
+    --orange-soft: rgba(255, 106, 43, 0.16); --orange-line: rgba(255, 106, 43, 0.45);
+    --line: rgba(247, 239, 230, 0.14);
+    --good: #3FBF74; --good-ink: #3FBF74; --good-soft: rgba(63, 191, 116, 0.12); --good-line: rgba(63, 191, 116, 0.40);
+    --warn: #E0A93B; --warn-ink: #E0A93B; --warn-soft: rgba(224, 169, 59, 0.12); --warn-line: rgba(224, 169, 59, 0.45);
+    --bad: #EF5350;  --bad-ink: #EF5350;  --bad-soft: rgba(239, 83, 80, 0.12);  --bad-line: rgba(239, 83, 80, 0.45);
+    --on-bad: #1C1512;
+    --ch-didi: #F7EFE6;
+    --heat-0: #2E2219;
+    --overlay: rgba(0, 0, 0, 0.65);
+    --shadow-brand: 0 10px 24px -10px rgba(255, 106, 43, 0.45);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --cream: #171310; --paper: #221B16; --paper-2: #271F19;
+  --ink: #F7EFE6; --ink-soft: #C9BEB3; --ink-mute: #A3968A;
+  --orange: #FF6A2B; --orange-deep: #FF8A50; --orange-text: #FF8A50; --orange-fill: #FF6A2B;
+  --on-orange: #1C1512;
+  --orange-soft: rgba(255, 106, 43, 0.16); --orange-line: rgba(255, 106, 43, 0.45);
+  --line: rgba(247, 239, 230, 0.14);
+  --good: #3FBF74; --good-ink: #3FBF74; --good-soft: rgba(63, 191, 116, 0.12); --good-line: rgba(63, 191, 116, 0.40);
+  --warn: #E0A93B; --warn-ink: #E0A93B; --warn-soft: rgba(224, 169, 59, 0.12); --warn-line: rgba(224, 169, 59, 0.45);
+  --bad: #EF5350;  --bad-ink: #EF5350;  --bad-soft: rgba(239, 83, 80, 0.12);  --bad-line: rgba(239, 83, 80, 0.45);
+  --on-bad: #1C1512;
+  --ch-didi: #F7EFE6;
+  --heat-0: #2E2219;
+  --overlay: rgba(0, 0, 0, 0.65);
+  --shadow-brand: 0 10px 24px -10px rgba(255, 106, 43, 0.45);
 }
 
 * {
@@ -21,10 +97,29 @@
 }
 
 html, body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-manrope), system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
+  /* Números tabulares en todas partes: columnas de pesos alineadas */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fredoka: títulos, montos grandes, botones y tabs */
+h1, h2, h3, .font-display,
+.text-lg.font-bold, .text-xl.font-bold, .text-2xl.font-bold, .text-3xl.font-bold, .text-4xl.font-bold,
+button:not(.text-left), [role="tab"] {
+  font-family: var(--font-fredoka), var(--font-manrope), system-ui, sans-serif;
+}
+button:not(.text-left) { font-weight: 600; }
+
+/* Logo según el tema */
+.logo-dark { display: none; }
+:root[data-theme="dark"] .logo-light { display: none; }
+:root[data-theme="dark"] .logo-dark { display: inline-block; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .logo-light { display: none; }
+  :root:not([data-theme="light"]) .logo-dark { display: inline-block; }
 }
 
 /* Safe area bottom padding for nav */
@@ -38,10 +133,43 @@ button, [role="button"] {
   cursor: pointer;
 }
 
+/* Botón principal: pastilla naranja con sombra de marca */
+.btn-primary {
+  background: var(--orange);
+  color: var(--on-orange);
+  box-shadow: var(--shadow-brand);
+}
+.btn-primary:active:not(:disabled) { background: var(--orange-deep); }
+.btn-primary:disabled { background: var(--paper-2); color: var(--ink-mute); box-shadow: none; }
+/* Acento compacto (texto < 19px): relleno orange-fill para pasar AA 4.5:1 */
+.btn-accent { background: var(--orange-fill); color: var(--on-orange); }
+.btn-accent:active:not(:disabled) { background: var(--orange-deep); }
+
+/* Inputs: fondo paper, borde line, radio 14px */
+input, select, textarea {
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+input::placeholder, textarea::placeholder { color: var(--ink-mute); opacity: 1; }
+
+/* Foco visible en todo lo interactivo */
+:focus-visible {
+  outline: 3px solid var(--orange) !important;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Scrollbar mínimo */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }

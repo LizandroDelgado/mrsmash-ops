@@ -178,11 +178,11 @@ export default function GastosPage() {
 
   return (
     <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
-      <Header right={
+      <Header titulo="Gastos" right={
         <div className="flex items-center gap-2">
           <button type="button" onClick={abrirSuelto}
-            className="flex items-center gap-1.5 px-4 rounded-xl font-bold text-sm"
-            style={{ background: C.brand, color: '#fff' }}>
+            className="flex items-center gap-1.5 px-4 rounded-full font-bold text-sm"
+            style={{ background: C.brandFill, color: 'var(--on-orange)' }}>
             <Plus size={18} strokeWidth={2.5} />Gasto
           </button>
           <MasMenu />
@@ -203,11 +203,11 @@ export default function GastosPage() {
           <>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Vencido',   value: totalVencido, color: totalVencido > 0 ? C.bad : '#fff' },
+                { label: 'Vencido',   value: totalVencido, color: totalVencido > 0 ? C.bad : C.ink },
                 { label: '7 días',    value: total7,       color: C.warn },
-                { label: '30 días',   value: total30,      color: '#fff' },
+                { label: '30 días',   value: total30,      color: C.ink },
               ].map(({ label, value, color }) => (
-                <div key={label} className="rounded-xl p-3 text-center" style={{ background: C.surface }}>
+                <div key={label} className="rounded-xl p-3 text-center" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                   <p className="text-base font-bold" style={{ color }}>{formatMXN(value)}</p>
                   <p className="text-xs" style={{ color: C.dimmer }}>{label}</p>
                 </div>
@@ -223,9 +223,9 @@ export default function GastosPage() {
                 {visibles.map((o) => {
                   const chip = chipVencimiento(o.fecha_vencimiento, hoy);
                   return (
-                    <div key={o.id} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: C.surface }}>
+                    <div key={o.id} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-white truncate">{o.concepto}</p>
+                        <p className="text-sm font-bold text-ink truncate">{o.concepto}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${chip.color}22`, color: chip.color }}>
                             {chip.texto}
@@ -237,10 +237,10 @@ export default function GastosPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-white">{formatMXN(pendiente(o))}</p>
+                        <p className="font-bold text-ink">{formatMXN(pendiente(o))}</p>
                       </div>
-                      <button type="button" onClick={() => abrirPago(o)} className="px-4 rounded-xl font-bold text-sm"
-                        style={{ background: C.brand, color: '#fff' }}>Pagar</button>
+                      <button type="button" onClick={() => abrirPago(o)} className="px-4 rounded-full font-bold text-sm"
+                        style={{ background: C.brandFill, color: 'var(--on-orange)' }}>Pagar</button>
                     </div>
                   );
                 })}
@@ -264,15 +264,15 @@ export default function GastosPage() {
                 {fijos.map((g) => (
                   <button key={g.id} type="button"
                     onClick={() => g.categoria !== 'sueldo_dueno' && setGasto({ ...g, monto: String(g.monto) })}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left" style={{ background: C.surface }}>
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{g.concepto}</p>
+                      <p className="text-sm font-bold text-ink truncate">{g.concepto}</p>
                       <p className="text-xs" style={{ color: C.dimmer }}>
                         {CAT_LABEL[g.categoria]} · {describirFrecuencia(g)}
                         {g.categoria === 'sueldo_dueno' && ' · se edita en Configuración'}
                       </p>
                     </div>
-                    <span className="font-bold text-white ml-3">{formatMXN(g.monto)}</span>
+                    <span className="font-bold text-ink ml-3">{formatMXN(g.monto)}</span>
                   </button>
                 ))}
                 <BotonPrincipal onClick={() => setGasto({ ...GASTO_VACIO })}>+ AGREGAR GASTO FIJO</BotonPrincipal>
@@ -289,9 +289,9 @@ export default function GastosPage() {
               <div className="space-y-2">
                 {proveedores.map((p) => (
                   <button key={p.id} type="button" onClick={() => setProv({ ...p, telefono: p.telefono || '', dias_credito: String(p.dias_credito) })}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left" style={{ background: C.surface }}>
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{p.nombre}</p>
+                      <p className="text-sm font-bold text-ink truncate">{p.nombre}</p>
                       <p className="text-xs" style={{ color: C.dimmer }}>{p.telefono || 'Sin teléfono'}</p>
                     </div>
                     <span className="text-xs font-bold ml-3" style={{ color: p.dias_credito > 0 ? C.warn : C.dimmer }}>
@@ -305,7 +305,7 @@ export default function GastosPage() {
           </>
         )}
 
-        <Link href="/insumos" className="flex items-center justify-center gap-2 rounded-2xl font-bold text-sm"
+        <Link href="/insumos" className="flex items-center justify-center gap-2 rounded-full font-bold text-sm"
           style={{ background: C.surface2, color: C.dim, minHeight: 48 }}>
           <ShoppingBag size={16} /> Registrar compra de insumos
         </Link>
@@ -316,7 +316,7 @@ export default function GastosPage() {
         {pagando && (
           <>
             <div>
-              <Label color={C.brand}>¿CUÁNTO PAGAS?</Label>
+              <Label color={C.brandText}>¿CUÁNTO PAGAS?</Label>
               <MontoInput value={pagoMonto} onChange={setPagoMonto} />
               <p className="text-xs mt-1" style={{ color: C.dimmer }}>Pendiente: {formatMXN(pendiente(pagando))} · puedes abonar menos</p>
             </div>
@@ -329,7 +329,7 @@ export default function GastosPage() {
             </BotonPrincipal>
             {pagando.origen !== 'compra_credito' && Number(pagando.monto_pagado) === 0 && (
               <button type="button" onClick={cancelarObligacion} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: '#ef444411', color: C.bad }}>No se va a pagar (cancelar)</button>
+                style={{ background: 'var(--bad-soft)', color: C.bad }}>No se va a pagar (cancelar)</button>
             )}
           </>
         )}
@@ -379,7 +379,7 @@ export default function GastosPage() {
             </BotonPrincipal>
             {gasto.id && (
               <button type="button" onClick={desactivarGasto} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: '#ef444411', color: C.bad }}>Quitar este gasto fijo</button>
+                style={{ background: 'var(--bad-soft)', color: C.bad }}>Quitar este gasto fijo</button>
             )}
           </>
         )}
@@ -401,7 +401,7 @@ export default function GastosPage() {
             </BotonPrincipal>
             {prov.id && (
               <button type="button" onClick={borrarProv} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: '#ef444411', color: C.bad }}>Quitar proveedor</button>
+                style={{ background: 'var(--bad-soft)', color: C.bad }}>Quitar proveedor</button>
             )}
           </>
         )}

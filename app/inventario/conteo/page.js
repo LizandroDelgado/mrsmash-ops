@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
-import { Label, Cargando, Vacio, BotonPrincipal, CantidadInput, C } from '@/components/ui';
+import { Label, Cargando, Vacio, BotonPrincipal, CantidadInput, C, Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatMXN2 } from '@/lib/calculos';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
@@ -109,16 +109,7 @@ export default function ConteoPage() {
     router.push('/inventario');
   };
 
-  const top = (titulo) => (
-    <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
-      style={{ background: C.bg, borderBottom: `1px solid ${C.surface2}` }}>
-      <Link href="/inventario" aria-label="Volver" className="flex items-center justify-center rounded-xl"
-        style={{ width: 48, height: 48, background: C.surface2 }}>
-        <ChevronLeft size={22} style={{ color: C.dim }} />
-      </Link>
-      <p className="font-bold text-white text-lg">{titulo}</p>
-    </header>
-  );
+  const top = (titulo) => <Header titulo={titulo} back="/inventario" />;
 
   const shell = (titulo, children) => (
     <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
@@ -141,11 +132,11 @@ export default function ConteoPage() {
     const v = Number(cerrado.valor_diferencia);
     return shell('Conteo cerrado', (
       <>
-        <div className="rounded-2xl p-5 text-center space-y-1" style={{ background: C.surface }}>
+        <div className="rounded-2xl p-5 text-center space-y-1" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
           <p className="text-4xl">✅</p>
-          <p className="font-bold text-white text-lg">Inventario ajustado</p>
+          <p className="font-bold text-ink text-lg">Inventario ajustado</p>
           <p className="text-sm" style={{ color: C.dim }}>{cerrado.insumos} insumos contados</p>
-          <p className="text-2xl font-bold pt-2" style={{ color: v < 0 ? C.bad : v > 0 ? C.ok : '#fff' }}>
+          <p className="text-2xl font-bold pt-2" style={{ color: v < 0 ? C.bad : v > 0 ? C.ok : C.ink }}>
             {v < 0 ? `Merma ${formatMXN(-v)}` : v > 0 ? `Sobrante ${formatMXN(v)}` : 'Sin diferencias'}
           </p>
           <p className="text-xs" style={{ color: C.dim }}>Inventario valorizado: {formatMXN(Number(cerrado.valor_inventario))}</p>
@@ -159,8 +150,8 @@ export default function ConteoPage() {
   if (!conteo) {
     return shell('Contar inventario', (
       <>
-        <div className="rounded-2xl p-5 space-y-2" style={{ background: C.surface }}>
-          <p className="font-bold text-white">Cuenta lo que hay físicamente</p>
+        <div className="rounded-2xl p-5 space-y-2" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+          <p className="font-bold text-ink">Cuenta lo que hay físicamente</p>
           <p className="text-sm" style={{ color: C.dim }}>
             Vas a ver {insumos.length} insumos uno por uno. Escribe lo que cuentas (en kg, L o piezas) y toca Siguiente.
             Al final te mostramos la diferencia contra lo que debería haber, en pesos.
@@ -180,9 +171,9 @@ export default function ConteoPage() {
       <>
         {!resumen ? <Cargando /> : (
           <>
-            <div className="rounded-2xl p-4 text-center" style={{ background: C.surface }}>
+            <div className="rounded-2xl p-4 text-center" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
               <p className="text-xs font-bold" style={{ color: C.dim }}>DIFERENCIA VALORIZADA</p>
-              <p className="text-3xl font-bold" style={{ color: total < 0 ? C.bad : total > 0 ? C.ok : '#fff' }}>
+              <p className="text-3xl font-bold" style={{ color: total < 0 ? C.bad : total > 0 ? C.ok : C.ink }}>
                 {total < 0 ? '−' : total > 0 ? '+' : ''}{formatMXN(Math.abs(total))}
               </p>
               <p className="text-xs" style={{ color: C.dim }}>
@@ -195,16 +186,16 @@ export default function ConteoPage() {
                 return (
                   <button key={r.insumo_id} type="button" onClick={() => setIdx(insumos.findIndex((i) => i.id === r.insumo_id))}
                     className="w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl text-left"
-                    style={{ background: C.surface, minHeight: 56 }}>
+                    style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 56 }}>
                     <span className="min-w-0">
-                      <span className="block font-bold text-white text-sm truncate">{r.nombre}</span>
+                      <span className="block font-bold text-ink text-sm truncate">{r.nombre}</span>
                       <span className="block text-xs" style={{ color: C.dimmer }}>
                         Contaste {fmtCantidad(r.cantidad_fisica, r.unidad_base)}
                         {r.arranque ? ' · primer conteo' : ` · debía ${fmtCantidad(r.cantidad_teorica, r.unidad_base)}`}
                       </span>
                     </span>
                     {r.arranque ? (
-                      <span className="px-2 py-1 rounded-lg text-xs font-bold shrink-0" style={{ background: `${C.ok}22`, color: C.ok }}>
+                      <span className="px-2 py-1 rounded-lg text-xs font-bold shrink-0" style={{ background: `${C.okSoft}`, color: C.ok }}>
                         Arranque
                       </span>
                     ) : (
@@ -249,11 +240,11 @@ export default function ConteoPage() {
   return shell(`Conteo · ${idx + 1} de ${insumos.length}`, (
     <>
       <div className="h-2 rounded-full overflow-hidden" style={{ background: C.surface2 }}>
-        <div className="h-full" style={{ width: `${(idx / insumos.length) * 100}%`, background: C.brand }} />
+        <div className="h-full" style={{ width: `${(idx / insumos.length) * 100}%`, background: C.brandFill }} />
       </div>
       <div className="pt-4">
         <Label>{NOMBRE_CATEGORIA[actual.categoria]?.toUpperCase()}</Label>
-        <p className="text-3xl font-bold text-white">{actual.nombre}</p>
+        <p className="text-3xl font-bold text-ink">{actual.nombre}</p>
         <p className="text-sm mt-1" style={{ color: C.dim }}>¿Cuánto hay? En {u.label === 'pza' ? 'piezas' : u.label}.</p>
       </div>
       <div ref={(el) => { inputRef.current = el?.querySelector('input'); }}>
@@ -262,7 +253,7 @@ export default function ConteoPage() {
       <BotonPrincipal onClick={siguiente} disabled={valor === '' || ocupado}>Siguiente</BotonPrincipal>
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => setIdx((i) => Math.max(0, i - 1))} disabled={idx === 0}
-          className="rounded-xl text-sm font-bold" style={{ background: C.surface2, color: idx === 0 ? '#444' : C.dim, minHeight: 52 }}>
+          className="rounded-xl text-sm font-bold" style={{ background: C.surface2, color: idx === 0 ? 'var(--ink-mute)' : C.dim, minHeight: 52 }}>
           ← Anterior
         </button>
         <button type="button" onClick={() => setIdx((i) => i + 1)} className="rounded-xl text-sm font-bold"

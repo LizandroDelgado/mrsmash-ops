@@ -331,6 +331,50 @@ Recibe los agregados de las RPC y devuelve máximo 5 tarjetas, ordenadas por gra
 
 ---
 
+## 4d. Diseño de marca (2026-10-30)
+
+La identidad es la misma que la de la página pública. **Sólo se cambió la apariencia:** no se tocó lógica, consultas ni base de datos.
+
+### Tokens y tipografía
+- **Fuente única de color:** `app/globals.css` define los tokens en CSS: claro por default; oscuro con `prefers-color-scheme` o `data-theme="dark"`.
+  - Superficies: `--cream`, `--paper`, `--paper-2`.
+  - Texto: `--ink`, `--ink-soft`, `--ink-mute`.
+  - Naranja: `--orange`, `--orange-deep`, `--orange-text`, `--orange-fill`, `--on-orange`.
+  - Semánticos: `--good`, `--warn`, `--bad`, cada uno con `-ink`, `-soft` y `-line`.
+  - Banda oscura fija: `--band*`. Canales: `--ch-*`.
+- `tailwind.config.js` expone los tokens como clases.
+- **Cero hex fuera de esos dos archivos.**
+  - `components/ui.js → C` sólo contiene `var(--…)`.
+  - Recharts recibe los colores resueltos con `lib/useTokens.js`, que se recalcula al cambiar el tema.
+- **Tipografía (next/font):** Fredoka 500/600/700 para títulos, montos grandes, botones y tabs; Manrope para todo el texto. Números tabulares en toda la app.
+- **Tema:**
+  - Selector Sistema / Claro / Oscuro en /configuracion, guardado en `localStorage('tema')`.
+  - Un script en `<head>` pone `data-theme` antes de pintar, sin parpadeo.
+
+### Contraste AA
+Se agregaron tokens de texto sin cambiar los colores de marca:
+| Token | Valor | Por qué |
+|---|---|---|
+| `--orange-text` | claro #B83500 | El naranja #FF4D00 como texto da 3.3:1 |
+| `--orange-fill` | claro #C93A00 | Chips seleccionados con texto chico: blanco a 5.1:1 |
+| `--on-orange` | oscuro #1C1512 | Blanco sobre #FF6A2B da 2.86:1 |
+| `--good-ink`, `--warn-ink` | claro #17733F, #8C5A10 | #1F8A4C y #B7791F como texto no pasan 4.5:1 |
+
+- El botón principal usa #FF4D00 con Fredoka 600 de 20px: es texto grande, que pasa a 3.33:1.
+- La banda tiene sus propios semánticos (`--band-good`, `--band-warn`, `--band-bad`, `--band-accent`), iguales en ambos temas.
+
+### Gráficas
+- **Canales:** WhatsApp #FF4D00, Didi #1C1512 (en oscuro #F7EFE6), Salón #E0A93B.
+- **Validador de dataviz:** la separación para daltonismo pasa (ΔE ≥ 21.8). Advierte que Salón tiene 2.1:1 sobre blanco en claro y que Didi "se lee gris". Se mantuvieron por decisión de marca, con leyenda siempre visible, separación de 2px entre segmentos apilados y valores en el tooltip.
+- **Heatmap:** `color-mix()` de `--heat-0` (crema) a `--orange`.
+
+### PWA
+- `manifest.json`: íconos `/brand/icon-192.png` y `/brand/icon-512.png` (`any` y `maskable`), `background_color` #FFF8EE, `theme_color` #FF4D00. El `apple-touch-icon` es `/brand/apple-touch-icon.png`.
+- Los íconos viejos de `public/` se conservan.
+- Capturas a 360 px de las 8 pantallas en claro y oscuro: `docs/rediseno/`.
+
+---
+
 ## 5. Bitácora de cierre de Fase 1 (2026-10-29)
 
 **Respaldo previo:** `pg_dump --schema=public` (esquema + datos) en `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261029_1556.sql`, fuera del repo, de 219 KB. Conteos verificados: 301 pedidos, 565 items, 59 compras, 507 Didi, 11 productos.

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, Trash2, RefreshCw } from 'lucide-react';
 import BuscadorInsumos from '@/components/BuscadorInsumos';
-import { Label, Cargando, BotonPrincipal, CantidadInput, C } from '@/components/ui';
+import { Label, Cargando, BotonPrincipal, CantidadInput, C, Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatMXN2 } from '@/lib/calculos';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
@@ -96,23 +96,7 @@ export default function RecetasPage() {
     await cargar();
   };
 
-  const header = (titulo, onBack) => (
-    <header className="sticky top-0 z-40 flex items-center gap-3 px-4 py-3"
-      style={{ background: C.bg, borderBottom: `1px solid ${C.surface2}` }}>
-      {onBack ? (
-        <button type="button" onClick={onBack} aria-label="Volver" className="flex items-center justify-center rounded-xl"
-          style={{ width: 48, height: 48, background: C.surface2 }}>
-          <ChevronLeft size={22} style={{ color: C.dim }} />
-        </button>
-      ) : (
-        <Link href="/inventario" aria-label="Volver" className="flex items-center justify-center rounded-xl"
-          style={{ width: 48, height: 48, background: C.surface2 }}>
-          <ChevronLeft size={22} style={{ color: C.dim }} />
-        </Link>
-      )}
-      <p className="font-bold text-white text-lg truncate">{titulo}</p>
-    </header>
-  );
+  const header = (titulo, onBack) => <Header titulo={titulo} back={onBack || '/inventario'} />;
 
   if (cargando) return <div className="min-h-screen" style={{ background: C.bg }}>{header('Recetas')}<Cargando /></div>;
 
@@ -130,15 +114,15 @@ export default function RecetasPage() {
       <div className="min-h-screen" style={{ background: C.bg }}>
         {header(prod.nombre, cerrarDetalle)}
         <main className="px-4 pt-4 pb-10 space-y-4">
-          <div className="rounded-2xl p-4" style={{ background: C.surface }}>
+          <div className="rounded-2xl p-4" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
                 <p className="text-xs" style={{ color: C.dim }}>Precio</p>
-                <p className="font-bold text-white">{formatMXN(precio)}</p>
+                <p className="font-bold text-ink">{formatMXN(precio)}</p>
               </div>
               <div>
                 <p className="text-xs" style={{ color: C.dim }}>Costo receta</p>
-                <p className="font-bold text-white">{formatMXN2(costoVivo)}</p>
+                <p className="font-bold text-ink">{formatMXN2(costoVivo)}</p>
               </div>
               <div>
                 <p className="text-xs" style={{ color: C.dim }}>Margen</p>
@@ -153,7 +137,7 @@ export default function RecetasPage() {
                 </p>
                 <button type="button" disabled={ocupado}
                   onClick={() => sincronizar([{ producto_id: prod.producto_id, costo_receta: Math.round(costoVivo * 100) / 100 }])}
-                  className="px-3 rounded-xl text-xs font-bold shrink-0" style={{ background: C.surface2, color: C.brand, minHeight: 48 }}>
+                  className="px-3 rounded-full text-xs font-bold shrink-0" style={{ background: C.surface2, color: C.brandText, minHeight: 48 }}>
                   Usar receta
                 </button>
               </div>
@@ -171,17 +155,17 @@ export default function RecetasPage() {
                 if (!i) return null;
                 const costoLinea = (Number(l.cantidad) || 0) * Number(i.costo_promedio);
                 return (
-                  <div key={l.id} className="rounded-xl p-3 space-y-2" style={{ background: C.surface }}>
+                  <div key={l.id} className="rounded-xl p-3 space-y-2" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <div className="flex items-center justify-between gap-2">
-                      <p className="font-bold text-white truncate">
+                      <p className="font-bold text-ink truncate">
                         {i.nombre}
                         {l.notas && (
-                          <span className="ml-2 px-2 py-0.5 rounded-md text-xs font-bold" style={{ background: `${C.warn}22`, color: C.warn }}>
+                          <span className="ml-2 px-2 py-0.5 rounded-md text-xs font-bold" style={{ background: `${C.warnSoft}`, color: C.warn }}>
                             {l.notas}
                           </span>
                         )}
                       </p>
-                      <p className="text-sm font-bold shrink-0" style={{ color: Number(i.costo_promedio) > 0 ? '#fff' : C.warn }}>
+                      <p className="text-sm font-bold shrink-0" style={{ color: Number(i.costo_promedio) > 0 ? C.ink : C.warn }}>
                         {Number(i.costo_promedio) > 0 ? formatMXN2(costoLinea) : 'sin costo'}
                       </p>
                     </div>
@@ -192,10 +176,10 @@ export default function RecetasPage() {
                           onEnter={() => guardarCantidad(l)} />
                       </div>
                       {Number(l.cantidad) > 0 && Number(l.cantidad) !== l.guardada ? (
-                        <button type="button" onClick={() => guardarCantidad(l)} className="px-4 rounded-xl font-bold text-sm"
-                          style={{ background: C.brand, color: '#fff', minHeight: 52 }}>OK</button>
+                        <button type="button" onClick={() => guardarCantidad(l)} className="px-4 rounded-full font-bold text-sm"
+                          style={{ background: C.brandFill, color: 'var(--on-orange)', minHeight: 52 }}>OK</button>
                       ) : (
-                        <button type="button" onClick={() => quitar(l)} aria-label="Quitar" className="flex items-center justify-center rounded-xl"
+                        <button type="button" onClick={() => quitar(l)} aria-label="Quitar" className="flex items-center justify-center rounded-full"
                           style={{ width: 52, height: 52, background: C.surface2 }}>
                           <Trash2 size={18} style={{ color: C.dimmer }} />
                         </button>
@@ -224,8 +208,8 @@ export default function RecetasPage() {
           ) : (
             <div className="rounded-2xl p-3 space-y-3" style={{ background: C.surface, border: `1px solid ${C.brand}` }}>
               <div className="flex items-center justify-between">
-                <p className="font-bold text-white">{nuevo.nombre}</p>
-                <button type="button" onClick={() => setNuevo(null)} className="px-3 rounded-xl text-sm"
+                <p className="font-bold text-ink">{nuevo.nombre}</p>
+                <button type="button" onClick={() => setNuevo(null)} className="px-3 rounded-full text-sm"
                   style={{ background: C.surface2, color: C.dim, minHeight: 48 }}>Cambiar</button>
               </div>
               <div>
@@ -252,8 +236,8 @@ export default function RecetasPage() {
         {desfasados.length > 0 && (
           <button type="button" disabled={ocupado}
             onClick={() => { if (confirm(`¿Actualizar el costo registrado de ${desfasados.length} producto(s) con el costo de su receta?`)) sincronizar(desfasados); }}
-            className="w-full flex items-center justify-center gap-2 rounded-2xl font-bold"
-            style={{ background: `${C.brand}22`, color: C.brand, minHeight: 52, border: `1px solid ${C.brand}66` }}>
+            className="w-full flex items-center justify-center gap-2 rounded-full font-bold"
+            style={{ background: `${C.brandSoft}`, color: C.brandText, minHeight: 52, border: `1px solid ${C.brandLine}` }}>
             <RefreshCw size={16} /> Sincronizar costos con recetas ({desfasados.length})
           </button>
         )}
@@ -265,16 +249,16 @@ export default function RecetasPage() {
           return (
             <button key={p.producto_id} type="button" onClick={() => abrir(p.producto_id)}
               className="w-full flex items-center justify-between gap-2 px-4 py-2 rounded-xl text-left"
-              style={{ background: C.surface, minHeight: 60, opacity: p.disponible ? 1 : 0.5 }}>
+              style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 60, opacity: p.disponible ? 1 : 0.5 }}>
               <span className="min-w-0">
-                <span className="block font-bold text-white truncate">{p.nombre}</span>
+                <span className="block font-bold text-ink truncate">{p.nombre}</span>
                 <span className="block text-xs" style={{ color: tiene ? C.dimmer : C.warn }}>
                   {tiene ? `${p.n_insumos} insumos` : 'Sin receta · usa costo registrado'}
                   {tiene && Math.abs(Number(p.diferencia)) >= 0.01 && ` · registrado ${formatMXN2(Number(p.costo_insumos))}`}
                 </span>
               </span>
               <span className="text-right shrink-0">
-                <span className="block text-sm font-bold text-white">{formatMXN2(costo)}</span>
+                <span className="block text-sm font-bold text-ink">{formatMXN2(costo)}</span>
                 <span className="block text-xs font-bold" style={{ color: margenColor(mp) }}>margen {(mp * 100).toFixed(0)}%</span>
               </span>
             </button>

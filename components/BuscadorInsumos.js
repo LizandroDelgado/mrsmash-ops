@@ -56,7 +56,7 @@ export default function BuscadorInsumos({
         <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: C.dimmer }} />
         <input type="text" value={texto} placeholder={placeholder}
           onChange={(e) => { setTexto(e.target.value); setCreando(false); }}
-          className="w-full pl-11 pr-4 py-3 rounded-xl text-white placeholder-zinc-600 outline-none"
+          className="w-full pl-11 pr-4 py-3 rounded-xl text-ink outline-none"
           style={{ background: C.surface, border: `1px solid ${C.border}`, fontSize: 16, minHeight: 52 }} />
       </div>
 
@@ -64,8 +64,8 @@ export default function BuscadorInsumos({
         <div className="flex flex-wrap gap-2">
           {chips.map((i) => (
             <button key={i.id} type="button" onClick={() => elegir(i)}
-              className="px-4 rounded-xl text-sm font-bold"
-              style={{ background: C.surface2, color: '#ddd', minHeight: 48, border: `1px solid ${C.border}` }}>
+              className="px-4 rounded-full text-sm font-bold"
+              style={{ background: C.surface2, color: 'var(--ink)', minHeight: 48, border: `1px solid ${C.border}` }}>
               {i.nombre}
             </button>
           ))}
@@ -76,7 +76,7 @@ export default function BuscadorInsumos({
         <button key={i.id} type="button" onClick={() => elegir(i)}
           className="w-full flex items-center justify-between px-4 rounded-xl text-left"
           style={{ background: C.surface, minHeight: 52, border: `1px solid ${C.border}` }}>
-          <span className="font-bold text-white truncate">{i.nombre}</span>
+          <span className="font-bold text-ink truncate">{i.nombre}</span>
           <span className="text-xs ml-2 shrink-0" style={{ color: C.dimmer }}>
             {NOMBRE_CATEGORIA[i.categoria]} · {i.unidad_base}
           </span>
@@ -86,14 +86,14 @@ export default function BuscadorInsumos({
       {permitirCrear && t && !existe && !creando && (
         <button type="button" onClick={() => setCreando(true)}
           className="w-full flex items-center gap-2 px-4 rounded-xl font-bold text-left"
-          style={{ background: `${C.brand}22`, color: C.brand, minHeight: 52, border: `1px dashed ${C.brand}` }}>
+          style={{ background: `${C.brandSoft}`, color: C.brandText, minHeight: 52, border: `1px dashed ${C.brand}` }}>
           <Plus size={18} /> Crear «{texto.trim()}»
         </button>
       )}
 
       {creando && (
         <div className="rounded-2xl p-3 space-y-3" style={{ background: C.surface, border: `1px solid ${C.brand}` }}>
-          <p className="font-bold text-white">Nuevo insumo: {texto.trim()}</p>
+          <p className="font-bold text-ink">Nuevo insumo: {texto.trim()}</p>
           <div>
             <Label>SE MIDE EN</Label>
             <Chips options={UNIDADES_ALTA} value={unidad} onChange={setUnidad} />
