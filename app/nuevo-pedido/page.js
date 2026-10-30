@@ -72,11 +72,12 @@ function parsearVoz(texto, productos) {
 function getPrecio(producto, canal) {
   if (canal === 'didi')      return producto.precio_didi     || producto.precio_venta;
   if (canal === 'whatsapp')  return producto.precio_whatsapp || producto.precio_venta;
-  return producto.precio_whatsapp || producto.precio_venta;
+  return producto.precio_salon || producto.precio_whatsapp || producto.precio_venta;   // salón
 }
 
 function getPrecioNeto(producto, canal) {
-  if (canal === 'didi') return producto.precio_didi_neto || producto.precio_venta;
+  // Lo que Didi deposita (comisión + promos + retenciones): es lo que entra a Didi por cobrar
+  if (canal === 'didi') return producto.precio_didi_cobro || producto.precio_didi_neto || producto.precio_venta;
   return getPrecio(producto, canal);
 }
 

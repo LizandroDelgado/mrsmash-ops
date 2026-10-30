@@ -119,6 +119,7 @@ export default function DashboardPage() {
   const [verComp,   setVerComp]   = useState(false);
   const [celda,     setCelda]     = useState(null);
   const [ms,        setMs]        = useState(null);
+  const [extras,    setExtras]    = useState({ alertasCostos: [], cfg: null });
   const tk = useTokens();
 
   const { desde, hasta } = rango(periodo, desdeOtro, hastaOtro);
@@ -131,12 +132,15 @@ export default function DashboardPage() {
     // Las obligaciones del periodo deben existir para devengar OPEX (idempotente)
     const finMes = sumarDias(hasta.slice(0, 8) + '01', 40).slice(0, 8) + '01';
     await supabase.rpc('generar_obligaciones', { p_negocio: NEGOCIO_ID, p_hasta: sumarDias(finMes, -1) });
-    const [d, c, f1, f2] = await Promise.all([
+    const [d, c, f1, f2, al, cf] = await Promise.all([
       supabase.rpc('dashboard', { p_negocio: NEGOCIO_ID, p_desde: desde, p_hasta: hasta }),
       supabase.rpc('dinero_comprometido', { p_negocio: NEGOCIO_ID, p_horizonte_dias: 30 }),
       supabase.rpc('cashflow_proyectado', { p_negocio: NEGOCIO_ID, p_semanas: 8, p_factor_ventas: 1 }),
       supabase.rpc('cashflow_proyectado', { p_negocio: NEGOCIO_ID, p_semanas: 8, p_factor_ventas: 0.8 }),
+      supabase.rpc('alertas_costos', { p_negocio: NEGOCIO_ID }),
+      supabase.from('configuracion_negocio').select('meta_food_cost, meta_margen_minimo_pct, pct_comision_didi, pct_promos_didi').eq('negocio_id', NEGOCIO_ID).single(),
     ]);
+    setExtras({ alertasCostos: al.data || [], cfg: cf.data });
     const err = d.error || c.error || f1.error || f2.error;
     if (err) setError(err.message);
     setDash(d.data);
@@ -152,7 +156,7 @@ export default function DashboardPage() {
   const ant = dash?.anterior || {};
   const ef = dash?.efectivo || {};
   const inv = dash?.inventario || {};
-  const insights = generarInsights(dash, comp);
+  const insights = generarInsights(dash, comp, extras);
   const sinVentas = !cargando && n(a.tickets) === 0;
   const hayGastos = !!ef.hay_gastos;
   const filasCf = cf[escenario];
@@ -216,7 +220,7 @@ export default function DashboardPage() {
 
             {/* ── 2. KPIs ── */}
             <div className="grid grid-cols-2 gap-2">
-              <Tarjeta titulo="LO QUE ENTRÓ (NETO)" info="Lo que vendiste menos comisiones, promos y retenciones de Didi.">
+              <Tarjeta titulo="LO QUE ENTRÓ (NETO)" info="Lo que vendiste menos comisión y promos de Didi. Las retenciones de impuestos van aparte.">
                 <p className="text-xl font-bold text-ink">{formatMXN(a.venta_neta)}</p>
                 {sinVentas ? <Falta texto="ventas" href="/nuevo-pedido" accion="Pedido" /> : <Delta actual={a.venta_neta} anterior={ant.venta_neta} />}
               </Tarjeta>
@@ -292,11 +296,10 @@ export default function DashboardPage() {
                   return (
                     <>
                       {fila('Vendiste', a.venta_bruta)}
-                      {n(a.comision_didi) + n(a.promos_didi) + n(a.retenciones_didi) > 0 && (
+                      {n(a.comision_didi) + n(a.promos_didi) > 0 && (
                         <>
                           {fila('Comisión Didi', a.comision_didi, { neg: true, sangria: true })}
                           {fila('Promos Didi', a.promos_didi, { neg: true, sangria: true })}
-                          {n(a.retenciones_didi) > 0 && fila('Retenciones Didi', a.retenciones_didi, { neg: true, sangria: true })}
                         </>
                       )}
                       {fila('Lo que entró (neto)', a.venta_neta, { fuerte: true })}
@@ -306,9 +309,11 @@ export default function DashboardPage() {
                         : <Falta texto="gastos fijos" href="/gastos" accion="Gastos" />}
                       {fila('Lo que te queda después de todo', a.utilidad_operativa, { fuerte: true, color: n(a.utilidad_operativa) < 0 ? C.bad : C.ok })}
                       {n(a.prestamos) > 0 && fila('Pago de préstamos', a.prestamos, { neg: true })}
+                      {n(a.retenciones_didi) > 0 && fila('Impuestos retenidos por Didi', a.retenciones_didi, { neg: true })}
                       {n(a.retiros) > 0 && fila('Retiros tuyos', a.retiros, { neg: true })}
                       <div className="text-xs mt-2 space-y-1" style={{ color: C.dimmer }}>
-                        {n(a.bruta_didi_estimada) > 0 && <p>Didi capturado: comisión, promos y retenciones estimadas con tus tasas reales.</p>}
+                        {n(a.bruta_didi_estimada) > 0 && <p>Didi capturado: comisión, promos y retenciones estimadas con los % de Configuración.</p>}
+                        {n(a.retenciones_didi) > 0 && <p>Impuestos retenidos por Didi: anticipo de ISR/IVA, no es costo del producto; no entra al banco con el depósito.</p>}
                         {n(a.costo_respaldo) > 0 && <p>{formatMXN(a.costo_respaldo)} del costo usa el costo registrado del producto (sin receta o venta anterior al inventario).</p>}
                         {n(a.costo_estimado_import) > 0 && <p>{formatMXN(a.costo_estimado_import)} estimado para ventas Didi importadas (no traen productos).</p>}
                         {a.prime_cost != null && <p>Comida + nómina + tu sueldo = {pct(a.prime_cost, 0)} de lo que entra. Reserva de impuestos del periodo: {formatMXN(a.reserva_impuestos)}.</p>}
@@ -404,7 +409,8 @@ export default function DashboardPage() {
                         </ResponsiveContainer>
                       </div>
                       <p className="text-xs px-2 pb-1" style={{ color: C.dimmer }}>
-                        Precio neto del canal menos costo de receta. Didi neto = precio Didi × (1 − {pct(n(dash.tasas_didi?.tasa_comision) + n(dash.tasas_didi?.tasa_promos) + n(dash.tasas_didi?.tasa_retenciones), 1)}).
+                        Precio neto del canal menos costo de receta. Didi neto = precio Didi × (1 − {pct(n(dash.tasas_didi?.tasa_comision) + n(dash.tasas_didi?.tasa_promos), 1)} de comisión y promos).
+                        <Link href="/configuracion/precios-costos" className="ml-1" style={{ color: C.brandText }}>Cambiar precios</Link>
                       </p>
                     </>
                   );

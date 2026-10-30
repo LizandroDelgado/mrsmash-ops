@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Tags, ChevronRight } from 'lucide-react';
 import { Header, Label, Chips, MontoInput, TextInput, BotonPrincipal, Cargando, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
@@ -46,6 +48,10 @@ export default function ConfiguracionPage() {
       dias_reposicion_inventario: String(cfg.dias_reposicion_inventario),
       sueldo_dueno_semanal:       String(Number(cfg.sueldo_dueno_semanal) || ''),
       dia_pago_didi:              cfg.dia_pago_didi,
+      pct_comision_didi:          PCT(cfg.pct_comision_didi || 0),
+      pct_promos_didi:            PCT(cfg.pct_promos_didi || 0),
+      pct_retenciones_didi:       PCT(cfg.pct_retenciones_didi || 0),
+      meta_margen_minimo_pct:     PCT(cfg.meta_margen_minimo_pct),
     });
     setCargando(false);
   }, []);
@@ -78,6 +84,10 @@ export default function ConfiguracionPage() {
       dias_reposicion_inventario: parseInt(config.dias_reposicion_inventario, 10) || 7,
       sueldo_dueno_semanal:       parseFloat(config.sueldo_dueno_semanal) || 0,
       dia_pago_didi:              config.dia_pago_didi,
+      pct_comision_didi:          (parseFloat(config.pct_comision_didi) || 0) / 100,
+      pct_promos_didi:            (parseFloat(config.pct_promos_didi) || 0) / 100,
+      pct_retenciones_didi:       (parseFloat(config.pct_retenciones_didi) || 0) / 100,
+      meta_margen_minimo_pct:     (parseFloat(config.meta_margen_minimo_pct) || 0) / 100,
     }).eq('negocio_id', NEGOCIO_ID);
     if (error) alert('No se pudo guardar: ' + msgError(error));
     else { vibrar(); setAviso({ texto: 'Configuración guardada', tipo: 'ok' }); await cargar(); }
@@ -98,6 +108,18 @@ export default function ConfiguracionPage() {
             {aviso.texto}
           </button>
         )}
+
+        <Link href="/configuracion/precios-costos" className="flex items-center gap-3 px-4 rounded-card"
+          style={{ background: C.surface, border: `1px solid ${C.brandLine}`, minHeight: 72 }}>
+          <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 44, height: 44, background: C.brandSoft }}>
+            <Tags size={22} style={{ color: C.brandText }} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-display text-xl" style={{ color: C.ink, fontWeight: 600 }}>Precios y costos</span>
+            <span className="block text-xs" style={{ color: C.dim }}>Precios por canal, recetas, costos de insumos y ajustes</span>
+          </span>
+          <ChevronRight size={20} style={{ color: C.dim }} />
+        </Link>
 
         {cargando ? <Cargando /> : (
           <>
@@ -141,6 +163,28 @@ export default function ConfiguracionPage() {
                   <Label>META FOOD COST (%)</Label>
                   <TextInput type="number" inputMode="decimal" value={config.meta_food_cost} onChange={set('meta_food_cost')} />
                 </div>
+                <div>
+                  <Label>MARGEN MÍNIMO EN CANAL DIRECTO (%)</Label>
+                  <TextInput type="number" inputMode="decimal" value={config.meta_margen_minimo_pct} onChange={set('meta_margen_minimo_pct')} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label>COMISIÓN DIDI (%)</Label>
+                    <TextInput type="number" inputMode="decimal" value={config.pct_comision_didi} onChange={set('pct_comision_didi')} />
+                  </div>
+                  <div>
+                    <Label>PROMOS DIDI (%)</Label>
+                    <TextInput type="number" inputMode="decimal" value={config.pct_promos_didi} onChange={set('pct_promos_didi')} />
+                  </div>
+                </div>
+                <div>
+                  <Label>IMPUESTOS QUE RETIENE DIDI (%)</Label>
+                  <TextInput type="number" inputMode="decimal" value={config.pct_retenciones_didi} onChange={set('pct_retenciones_didi')} />
+                </div>
+                <p className="text-xs -mt-2" style={{ color: C.dimmer }}>
+                  Comisión y promos cuentan para tu margen. Las retenciones son anticipo de impuestos: sólo se descuentan de lo que Didi te deposita.
+                  Los tres arrancan con tu promedio real de las importaciones.
+                </p>
                 <div>
                   <Label>DÍAS DE INVENTARIO A REPONER</Label>
                   <TextInput type="number" inputMode="numeric" value={config.dias_reposicion_inventario} onChange={set('dias_reposicion_inventario')} />

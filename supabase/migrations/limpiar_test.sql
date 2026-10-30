@@ -56,6 +56,8 @@ WHERE id IN (SELECT id FROM t_mov)
 CREATE TEMP TABLE t_ins  ON COMMIT DROP AS SELECT id FROM insumos   WHERE nombre LIKE 'TEST%';
 CREATE TEMP TABLE t_prod ON COMMIT DROP AS SELECT id FROM productos WHERE nombre LIKE 'TEST%';
 CREATE TEMP TABLE t_cont ON COMMIT DROP AS SELECT id FROM conteos_inventario WHERE notas LIKE 'TEST%';
+DELETE FROM historial_costos       WHERE insumo_id IN (SELECT id FROM t_ins);
+DELETE FROM historial_precios      WHERE producto_id IN (SELECT id FROM t_prod);
 DELETE FROM compra_items           WHERE insumo_id IN (SELECT id FROM t_ins);
 DELETE FROM conteo_items           WHERE insumo_id IN (SELECT id FROM t_ins) OR conteo_id IN (SELECT id FROM t_cont);
 DELETE FROM conteos_inventario     WHERE id IN (SELECT id FROM t_cont);

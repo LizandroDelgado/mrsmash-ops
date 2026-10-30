@@ -118,7 +118,8 @@ El sueldo semanal es OPEX (gasto recurrente `sueldo_dueno`). Los retiros adicion
 | `20261029_04_fase21.sql` | Fase 2.1: categoría `prestamo`, convención de fin de mes, `gramos_por_porcion`, `costo_origen`, notas de receta |
 | `20261029_05_semilla_real.sql` | Fase 2.1: datos reales del dueño (21 insumos, recetas de 11 productos, 8 gastos fijos). Idempotente |
 | `20261029_06_dashboard.sql` | Fase 3: `pedidos.dia_operativo_corregido`, bases de análisis (`v_pedidos_base`, `v_items_base`), devengo de OPEX, rentabilidad, dinero comprometido, cashflow y RPC `dashboard` |
-| `limpiar_test.sql` | Borra todo lo marcado como `TEST%`, incluidos los movimientos generados y el inventario de prueba |
+| `20261030_07_precios_costos.sql` | Panel de precios y costos: `productos.categoria` y `precio_salon`, % de Didi en configuración, `costo_insumos` derivado de la receta, historiales y RPC por lotes |
+| `limpiar_test.sql` | Borra todo lo marcado como `TEST%`, incluidos los movimientos generados, el inventario de prueba y su historial de precios y costos |
 
 Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE`. Sin DROP de tablas, columnas ni datos. **Única excepción (04):** el CHECK de `gastos_recurrentes.categoria` se quita y se vuelve a poner más amplio (con `prestamo`), porque Postgres no permite editar un CHECK.
 
@@ -375,6 +376,88 @@ Se agregaron tokens de texto sin cambiar los colores de marca:
 
 ---
 
+## 4e. Precios y costos (2026-10-30)
+
+### Principios
+1. **El histórico no se reescribe.** `pedido_items` guarda el precio y el costo de cada venta; todo cambio aplica sólo hacia adelante.
+   - Verificado: ninguna de las 565 partidas históricas tiene costo 0.
+   - `v_items_base` usa siempre el costo guardado en la venta. Antes, si una partida tenía costo 0, usaba `productos.costo_insumos` actual, que habría recalculado el pasado.
+   - `trg_pedido_items_defaults` llena precio y costo vigentes sólo en partidas NUEVAS que lleguen sin ellos (por ejemplo, del bot); nunca toca filas existentes.
+2. **Una sola fuente de costo: la receta.** `productos.costo_insumos` es derivado y se sincroniza solo:
+   - al cambiar una receta (`recetas_sync`);
+   - al cambiar el costo de un insumo, sea por compra o manual (`insumos_costo`);
+   - al tocar el producto (`productos_precios`, BEFORE).
+   - Sólo los productos SIN receta conservan `costo_insumos` editable. La RPC rechaza el costo manual de un producto con receta.
+   - Esto cierra el pendiente "decidir si se sincroniza `costo_insumos`": sí, automático.
+   - Se quitaron los botones "Sincronizar" y "Usar receta" de /inventario/recetas.
+3. **Todo cambio queda en historial:**
+   - `historial_precios`: campo, valor anterior y nuevo, motivo, fecha. Registra `precio_whatsapp`, `precio_didi`, `precio_salon`, `precio_venta` y el `costo_insumos` manual.
+   - `historial_costos`: costo por unidad base anterior y nuevo, origen (`manual` o `compra`) y motivo.
+   - El kardex marca el origen al recalcular el promedio por compra.
+   - El motivo viaja en `set_config('mrsmash.motivo')` dentro de la transacción de la RPC.
+
+### Precios por canal
+| Canal | Columna | Notas |
+|---|---|---|
+| WhatsApp | `precio_whatsapp` | Nuevo pedido y bot |
+| Salón | `precio_salon` (nuevo) | Antes la app cobraba el precio de WhatsApp. Arranca igual a WhatsApp, y un producto nuevo toma WhatsApp por default. |
+| Didi | `precio_didi` | Bruto (lo que paga el cliente) |
+| — | `precio_didi_neto` | `precio_didi × (1 − comisión − promos)`. Para **margen y utilidad**. |
+| — | `precio_didi_cobro` (nuevo) | `precio_didi × (1 − comisión − promos − retenciones)`. Lo que entra a **Didi por cobrar** (Nuevo pedido lo usa como total). |
+| — | `precio_venta` | Precio de lista histórico. Ninguna venta lo usa; Recetas y el dashboard dejaron de usarlo para márgenes. |
+
+- `productos.categoria` (burger, papas, malteada, bebida) se aplicó desde `supabase/add_categoria_productos.sql`. `v_items_base` y `margenes_producto` cuentan burgers por categoría, con la regla por nombre como respaldo.
+
+### Didi: tres porcentajes en `configuracion_negocio`
+Prellenados con el histórico real de 507 importaciones (venta bruta $174,432):
+| Concepto | Columna | Cálculo | Valor |
+|---|---|---|---|
+| Comisión | `pct_comision_didi` | $41,207.44 / $174,432 | 23.62 % |
+| Promos | `pct_promos_didi` | $29,091.45 / $174,432 | 16.68 % |
+| Retenciones | `pct_retenciones_didi` | ($174,432 − 41,207.44 − 29,091.45 − 96,091.09) / $174,432 | 4.61 % |
+
+- **Margen y utilidad = sólo comisión + promos.** Las retenciones (ISR/IVA) son anticipo de impuestos, no costo del producto.
+- **Efectivo = comisión + promos + retenciones.**
+  - Lo que entra a Didi por cobrar: `precio_didi_cobro`.
+  - El depósito esperado en `cashflow_proyectado`: `neta − retenciones`.
+- **`v_pedidos_base`:** `neta = bruta − comisión − promos`. La columna `retenciones` va aparte.
+  - En importaciones, `retenciones = bruta − comisión − promos − ganancia_neta` sin recortar (hay filas con bonificación), así que `neta − retenciones = ganancia_neta`, exactamente lo depositado.
+- **Dashboard:** "Impuestos retenidos por Didi" aparece como línea aparte debajo de la utilidad.
+- **Cambiar un % recalcula el neto y el cobro de todos los productos** (trigger `config_didi`). Se eliminaron los 0.235 / 0.241 / 0.476 escritos en SQL.
+- **`meta_margen_minimo_pct`** (default 55 %): margen de contribución mínimo sobre lo que entra.
+- **Semáforo de margen:**
+  - verde si el costo de comida ≤ `meta_food_cost`;
+  - ámbar si el margen ≥ `meta_margen_minimo_pct`;
+  - rojo si queda debajo.
+
+### RPC y lecturas
+- **`aplicar_cambios_precios_costos(payload)`:** aplica `{ negocio_id, motivo, costos[], recetas[], precios[] }` en una sola transacción. Si un id no existe, un precio es negativo o se intenta poner costo manual a un producto con receta, revierte todo el lote.
+- **`volumen_productos`:** unidades de las 4 semanas que terminan en el último día con ventas. Lo usa el cálculo de impacto en la utilidad del mes.
+- **`alertas_costos`:** insumos que subieron ≥ 3 % en 60 días, con el producto más afectado. Alimenta el insight del dashboard: "El costo de X subió Y % desde [fecha]; tu margen en P bajó $Z; precio sugerido $W".
+- **`GET /api/menu`:** menú vigente leído de la base en cada llamada, sin caché. **El bot de WhatsApp no vive en este repo** (sólo el Dockerfile de Evolution API): debe leer de aquí para tomar precios nuevos sin redeploy.
+
+### Pantalla /configuracion/precios-costos
+Se entra desde un botón grande en Configuración. Cuatro pestañas:
+1. **Productos:**
+   - Agrupados por categoría. Cada producto muestra costo, precio por canal y margen en $ y % con semáforo.
+   - Detalle del producto:
+     - Precios por canal con margen, costo de comida y neto/depósito Didi en vivo.
+     - "Sugerido $X": el margen meta con el costo actual, redondeado hacia arriba a terminación 9; en Didi descuenta comisión + promos.
+     - Disponible / Pausado.
+     - Editor de receta, que es el mismo componente `components/EditorReceta.js` de /inventario/recetas, en modo lote.
+2. **Insumos:**
+   - Por categoría, con costo por kg / L / pieza, fecha y origen del último cambio.
+   - Editor "como lo compras" ($350 por 1 kg, $95 por 12 piezas), con el **impacto** antes de guardar: costo y margen de cada producto que lo usa, y la utilidad del mes con el volumen de las últimas 4 semanas.
+   - Alta de insumo y desactivar (no borra).
+3. **Masivo:** "Subir precios X %" por categoría y canal, con terminación 9 y vista previa con márgenes. "Subió un insumo X %", con su impacto.
+4. **Historial:** precios y costos, filtrable por nombre.
+
+**Al guardar:**
+- Todo se acumula en un lote. "Revisar y guardar (N)" abre el resumen antes → después con motivo opcional; un solo botón llama la RPC.
+- Después queda un recordatorio fijo (guardado en `localStorage`) para actualizar Soft Restaurant y Didi Food, con la lista para copiar.
+
+---
+
 ## 5. Bitácora de cierre de Fase 1 (2026-10-29)
 
 **Respaldo previo:** `pg_dump --schema=public` (esquema + datos) en `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261029_1556.sql`, fuera del repo, de 219 KB. Conteos verificados: 301 pedidos, 565 items, 59 compras, 507 Didi, 11 productos.
@@ -485,14 +568,15 @@ Se agregaron tokens de texto sin cambiar los colores de marca:
 ### Siguientes pasos de inventario (operación, no código)
 - Hacer el primer conteo físico: arranca el stock.
 - Confirmar el tocino de Papas Smash.
-- Decidir si se sincroniza `costo_insumos` con las recetas desde /inventario/recetas.
+- ~~Decidir si se sincroniza `costo_insumos` con las recetas~~ → automático desde la migración 07 (sección 4e).
 - Si ya se pagaron los gastos fijos de octubre, cancelar las obligaciones del 31 oct en Por pagar.
 
 ### Siguientes pasos (después de la Fase 3)
 - Capturar los saldos de hoy en /configuracion: activa el dinero libre real.
 - Capturar un pedido por ticket, en vivo, para tener ticket promedio, heatmap y food cost por pedido confiables.
 - Insights con IA sobre los mismos agregados (hoy son reglas).
-- `productos.categoria` en lugar de la regla por nombre `es_burger()`.
+- ~~`productos.categoria`~~ → aplicada en la migración 07.
+- Conectar el bot de WhatsApp a `GET /api/menu` (su código no está en este repo).
 
 ### Pendientes técnicos heredados de la Fase 2
 - Didi: corregir la UNIQUE pérdida de `importaciones_didi` (usar el id de pedido si el reporte lo trae) y conciliar por pedido en vez de por día.
