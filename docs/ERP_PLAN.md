@@ -26,7 +26,8 @@ Proyecto Supabase `effxuvviyhaksllmcrqh` · `negocio_id = 34797ee1-37fa-4736-ad5
 ### Hallazgos importantes
 1. **API key:** la key legacy `eyJ…` de `.env.local` **es rechazada** ("Invalid API key"). La que funciona es la `sb_publishable_…` que está escrita directamente en `lib/supabase/client.js`. Con ella anon puede leer, insertar, actualizar, borrar y llamar RPC (RLS deshabilitado). **No se cambió el cliente.** Si se rota la key, hay que actualizar `client.js`.
 2. **Zona horaria:** Tepic usa **America/Mazatlan (UTC−7)**, no America/Mexico_City (UTC−6). `dia_operativo()` usa Mazatlan con corte a las 05:00.
-3. **Fechas en UTC:** la app calculaba "hoy" con `new Date().toISOString()`, que da la fecha **UTC**. Desde las 17:00 de Tepic eso ya es "mañana", y ~70 % de los pedidos históricos tienen `fecha` distinta de su día local. Se corrigió hacia adelante con `lib/dia.js → diaOperativo()` en Pedidos, Nuevo pedido e Insumos. **No se reescribió el histórico.**
+3. **Fechas en UTC:** la app calculaba "hoy" con `new Date().toISOString()`, que da la fecha **UTC**. Desde las 17:00 de Tepic eso ya es "mañana". Se corrigió hacia adelante con `lib/dia.js → diaOperativo()` en Pedidos, Nuevo pedido e Insumos.
+   - **Corrección del diagnóstico (Fase 3):** el "~70 % con fecha distinta" comparaba `fecha` contra `created_at`, pero `created_at` es la hora de **captura** (60 % de los pedidos se capturó de 1 a 6 días después, casi siempre de mañana). El error UTC real afectó a 40 pedidos; ver la sección 4c.
 4. **`pedidos.hora`** no es confiable: mezcla hora del navegador, captura tardía y el default del servidor en UTC. El ledger no la usa.
 5. **Didi:** las importaciones (`importaciones_didi`, 507 filas) llegan sólo hasta 2026-05-17. Después de esa fecha el dueño captura los pedidos Didi en la app (`canal='didi'`, `total` = precio neto estimado). Finanzas y Dashboard suman las dos fuentes, así que hay doble conteo si se importa un periodo ya capturado.
 6. `importaciones_didi` **no genera pedidos**. Su UNIQUE es `(negocio_id, fecha, venta_bruta, metodo_pago)`, que es pérdida: dos pedidos iguales el mismo día cuentan como uno. Pendiente para Fase 2.
@@ -116,6 +117,7 @@ El sueldo semanal es OPEX (gasto recurrente `sueldo_dueno`). Los retiros adicion
 | `20261029_03_inventario.sql` | Fase 2: insumos, recetas, kardex, conteos, desglose de compras, triggers, vistas y RPC de inventario y food cost |
 | `20261029_04_fase21.sql` | Fase 2.1: categoría `prestamo`, convención de fin de mes, `gramos_por_porcion`, `costo_origen`, notas de receta |
 | `20261029_05_semilla_real.sql` | Fase 2.1: datos reales del dueño (21 insumos, recetas de 11 productos, 8 gastos fijos). Idempotente |
+| `20261029_06_dashboard.sql` | Fase 3: `pedidos.dia_operativo_corregido`, bases de análisis (`v_pedidos_base`, `v_items_base`), devengo de OPEX, rentabilidad, dinero comprometido, cashflow y RPC `dashboard` |
 | `limpiar_test.sql` | Borra todo lo marcado como `TEST%`, incluidos los movimientos generados y el inventario de prueba |
 
 Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE`. Sin DROP de tablas, columnas ni datos. **Única excepción (04):** el CHECK de `gastos_recurrentes.categoria` se quita y se vuelve a poner más amplio (con `prestamo`), porque Postgres no permite editar un CHECK.
@@ -219,6 +221,116 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 
 ---
 
+## 4c. Fase 3: dashboard, dinero libre y cashflow
+
+### Día operativo corregido del histórico
+- Columna `pedidos.dia_operativo_corregido`. `fecha` y `hora` originales **no se tocan**.
+- `created_at` **no sirve** para recalcular el día: es la hora de captura. Recalcular con él mandaba 99 pedidos al jueves.
+- La base es la fecha que declaró el dueño. El error UTC de la app vieja sólo pegó en capturas **nocturnas** con los botones de fecha. Regla aprobada por el dueño (A+B): estos pedidos van **un día antes**.
+  - **A:** se tocó "Hoy" entre las 17:00 y las 04:59 → la fecha quedó en la fecha UTC (día operativo + 1). 14 pedidos.
+  - **B:** se tocó "Ayer" entre las 17:00 y las 23:59 → la fecha quedó en el día de captura en vez del anterior. 26 pedidos. Ejemplo: 4 pedidos del lunes 3 de agosto, capturados ese lunes a las 20:11, pasan al domingo 2.
+- Los registros nuevos toman `dia_operativo_corregido = fecha` por trigger, porque la app ya calcula la fecha con `diaOperativo()`.
+
+| Día | Antes (`fecha`) | Después (corregido) |
+|---|---|---|
+| Lun | 4 | **0** |
+| Mar | 59 | 70 |
+| Mié | 66 | 62 |
+| Jue | 31 | 38 |
+| Vie | 49 | 35 |
+| Sáb | 45 | 49 |
+| Dom | 47 | 47 |
+
+### Un solo lugar para los datos
+- **`v_pedidos_base`:** pedidos no cancelados, con día corregido y canal (`manual` → salón), más las importaciones Didi de días sin pedidos Didi capturados (sin doble conteo). Las ventas históricas de WhatsApp y Didi se ven desde el primer día.
+  - **Didi capturado no trae desglose:** venta bruta = `total_bruto`, o Σ partidas, o `total`. Comisión, promos y retenciones se estiman con las tasas reales en vivo de `importaciones_didi` (`v_didi_tasas`): **comisión 23.6 %, promos 16.7 %, retenciones 4.6 %**.
+  - **Desviación del spec:** el spec decía que las promos eran ≈ 24.1 %; los datos dan 16.7 %. Se usa el dato en vivo.
+  - **Importaciones:** usan sus montos reales.
+  - **`hora`:** sólo cuando el pedido se capturó en vivo (mismo día operativo, entre las 16:00 y las 04:59). El heatmap lo aclara: "basado en N de M pedidos".
+- **`v_items_base`:** partidas con su costo. Usa el consumo valorizado de la receta (Fase 2) o, si no hay, el respaldo `pedido_items.costo` / `productos.costo_insumos` (`costo_respaldo`).
+- **`costo_ventas_periodo`:** partidas + estimado para importaciones Didi, que no traen productos: venta bruta × razón costo/bruta de los pedidos Didi con partidas. Se muestra marcado.
+- **OPEX devengado (`v_obligaciones_devengo`, `opex_periodo`):** cada obligación recurrente se reparte en su periodo (semana que termina en el vencimiento, mes, quincena o bimestre). Las manuales se cuentan en su día. Excluye canceladas y compras a crédito.
+  - Ejemplo: la renta de octubre ($6,000) aporta $6,000 × 6/31 a la semana del 26 de octubre.
+  - **Préstamos fuera de OPEX:** aparecen como "Pago de préstamos" debajo de la utilidad operativa.
+  - **Antes del 29 de octubre no hay gastos fijos registrados**, así que periodos anteriores muestran OPEX en 0.
+  - El dashboard llama a `generar_obligaciones` hasta el fin del mes consultado antes de calcular.
+- **`lista_compras` (SQL):** la misma regla para /inventario y para el dinero comprometido. Sustituye la función JS de la Fase 2.
+
+### Fórmulas (`resumen_periodo`, todo por día operativo, sin cancelados)
+- Venta neta = bruta − comisión − promos − retenciones de Didi (en los otros canales neta = bruta). Ticket promedio = neta / tickets.
+- Food cost = costo de ventas / venta neta (teórico). Si hay conteos que anclen el periodo, también el real de `food_cost()`.
+- Utilidad operativa = neta − costo de ventas − OPEX (incluye `sueldo_dueno`, excluye `prestamo`).
+- Prime cost = (costo de ventas + nómina + sueldo del dueño) / neta.
+- Margen de contribución por burger = (neta − costo de ventas) / burgers.
+- Punto de equilibrio = ⌈OPEX / margen por burger⌉ burgers; en $ = burgers × neta por burger.
+- Margen de seguridad = (neta − equilibrio $) / neta.
+- Reserva de impuestos = neta × `tasa_reserva_impuestos`. Se usa la venta neta porque Didi ya retiene impuestos sobre su parte.
+- Margen por producto y canal (`margenes_producto`) = precio neto del canal − costo de receta (o `costo_insumos` si no hay receta). Didi neto = precio Didi × (1 − 44.9 %).
+- Inventario: valor (sólo insumos contados), días de inventario = valor / costo de ventas diario, rotación = costo de ventas / valor, merma $ y % de la venta.
+- Efectivo:
+  - Saldos y Didi por cobrar aparte.
+  - Diferencias de corte y retiros del periodo.
+  - Gasto fijo diario = OPEX mensual de plantilla / 30.4.
+  - Runway = disponible / (gasto fijo diario + compras diarias de los últimos 28 días).
+
+### Dinero comprometido (`dinero_comprometido(negocio, horizonte=30)`)
+- `dinero_total` = caja + banco + terminal. `por_cobrar_didi` va aparte y no cuenta como disponible.
+- `comprometido` es la suma de tres partes, con detalle línea por línea en `lineas`:
+  - Obligaciones pendientes o parciales que vencen hasta hoy + horizonte, incluidas las vencidas (`generar_obligaciones` se corre antes).
+  - Reposición de inventario: Σ `lista_compras`.
+  - Reserva de impuestos del mes: venta neta del mes × tasa − impuestos pagados en el mes.
+- `dinero_libre` = total − comprometido.
+- Semáforo: verde si libre ≥ OPEX semanal (plantilla × 7 / 30.4), amarillo si ≥ 0, rojo si es negativo.
+- `sin_saldos`: no existe ningún movimiento `saldo_inicial`. La pantalla pide capturar saldos primero.
+
+### Cashflow (`cashflow_proyectado(negocio, semanas=8, factor_ventas=1)`)
+- **Semanas:** la semana 1 va de mañana a 7 días; saldo inicial = `dinero_total` de hoy.
+- **Ventana de ventas:** las 4 semanas que terminan en el último día con ventas (si el dueño dejó de capturar, no se promedian ceros); lunes = 0.
+- **Entradas:**
+  - Directas (efectivo y terminal): entran el mismo día, con el promedio por día de semana.
+  - Didi: lo vendido entra el `dia_pago_didi` de la **semana siguiente**.
+  - El Didi por cobrar actual entra en la primera fecha de pago.
+- **Salidas:**
+  - Compras promedio semanales, **sin las de crédito** (ésas ya son obligaciones).
+  - Obligaciones pendientes por vencimiento; las vencidas van a la semana 1 y cada obligación se cuenta una sola vez.
+  - Sueldo del dueño y retiros promedio, por separado.
+- **Pesimista:** `factor_ventas = 0.8` aplica a las ventas proyectadas, no al Didi ya por cobrar.
+
+### Insights (`lib/insights.js`, reglas sin IA)
+Recibe los agregados de las RPC y devuelve máximo 5 tarjetas, ordenadas por gravedad (rojo, amarillo, info) y luego por impacto estimado en $. Reglas:
+1. Food cost arriba de la meta o +2 pts sobre el promedio de 4 semanas, con los insumos que subieron más de 5 % en su última compra.
+2. Margen por burger Didi vs WhatsApp, con lo que ganas al pasar el 25 % de los pedidos Didi.
+3. Promos Didi mayores que la comisión.
+4. Ingeniería de menú (estrella, caballo, enigma, perro), con cortes en el promedio de unidades y margen.
+5. Día más flojo vs más fuerte (promedio de 8 semanas).
+6. Lo que vence en 7 días es mayor que el efectivo.
+7. Merma mayor al 3 % de la venta, con los 3 insumos que más se pierden.
+8. Faltantes de caja mayores a $100 en 7 días.
+9. Debajo del punto de equilibrio a mitad de mes, con las burgers por día que faltan.
+10. Insumos con cobertura menor a 2 días.
+
+### Pantalla /dashboard (reemplaza a /dashboard y a /finanzas)
+- Periodo: Hoy, Semana, Mes u Otro, siempre comparado con el periodo anterior de la misma duración.
+- Orden de arriba a abajo:
+  1. Dinero libre con semáforo; al tocarlo, el desglose de lo apartado.
+  2. Seis KPIs con delta y una explicación (i).
+  3. Insights.
+  4. Estado de resultados en lenguaje simple.
+  5. Gráficas:
+     - Ventas por día apiladas por canal.
+     - Heatmap día × hora.
+     - Margen por burger y canal.
+     - Lo que más vendes.
+     - Food cost semanal contra la meta.
+  6. Cashflow de 8 semanas (gráfica y tabla), con interruptor "Ventas −20 %"; la primera semana negativa se marca en rojo.
+  7. Inventario y efectivo.
+- Cada bloque sin datos muestra "Falta capturar X" con enlace a su pantalla.
+- /finanzas redirige a /dashboard y salió del menú ⋮. `lib/dashboard.js` se eliminó.
+- **Colores de canal:** Salón #3987e5, Didi #d95926, WhatsApp #199e70. Validados con el script de dataviz sobre #141414: ΔE CVD 9.4, contraste ≥ 3:1.
+- Los datos llegan en 4 RPC agregadas en paralelo; el cliente no recibe filas crudas.
+
+---
+
 ## 5. Bitácora de cierre de Fase 1 (2026-10-29)
 
 **Respaldo previo:** `pg_dump --schema=public` (esquema + datos) en `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261029_1556.sql`, fuera del repo, de 219 KB. Conteos verificados: 301 pedidos, 565 items, 59 compras, 507 Didi, 11 productos.
@@ -276,6 +388,45 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 
 ---
 
+## 5c. Bitácora de cierre de Fase 3 (2026-10-29)
+
+**Respaldo previo:** `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261029_2151_pre_fase3.sql` (332,060 bytes). Conteos: 301 pedidos, 565 items, 507 Didi, 21 insumos, 98 líneas de receta, 24 obligaciones.
+
+**Aplicación:** la 06 con `psql --single-transaction -v ON_ERROR_STOP=1`, exit 0. Resultado en producción: 40 pedidos corregidos, 0 sin día, lunes 4 → 0. Coincide con la prueba local.
+
+**Pruebas locales:** réplica PGlite **con el histórico real** cargado del respaldo y las migraciones 01–06 aplicadas dos veces: 27/27. Las suites anteriores siguen pasando: 26/26, 48/48 y 53/53.
+
+**Los 3 KPIs verificados a mano en producción (datos TEST, día de hoy sin ventas reales):**
+- **Datos de prueba:**
+  - Producto "TEST Smash" (WhatsApp $180, Didi $250) con una receta de 150 g de "TEST carne" a $0.20/g.
+  - Saldo TEST de $50,000 en Banco.
+  - Un pedido WhatsApp en efectivo, 2 × $180 = $360.
+  - Un pedido Didi con bruto de $250.
+- **Venta neta** = 360 + (250 − 23.62 % → 59.06 − 16.68 % → 41.69 − 4.61 % → 11.53) = 360 + 137.72 = **$497.72**. La RPC dio $497.72.
+- **Food cost** = consumo de receta 3 burgers × 150 g × $0.20 = $90; $90 / $497.72 = **18.08 %**. La RPC dio 90 y 0.1808.
+- **Dinero libre:**
+  - Tienes = 50,000 (Banco) + 360 (Caja, por el pedido en efectivo) = $50,360.
+  - Obligaciones pendientes en 30 días = $28,800 (los 8 fijos del 31 de octubre).
+  - Reposición = $0, porque ningún insumo contado está bajo mínimo ni con poca cobertura.
+  - Impuestos = 2 % × venta neta de octubre $24,905.40 = $498.11.
+  - Libre = 50,360 − 28,800 − 0 − 498.11 = **$21,061.89**. La RPC dio $21,061.89, en verde porque la OPEX semanal es de $4,835.53.
+- La venta del mes se calculó a mano en JS desde las tablas crudas (`pedidos` + `pedido_items` + `importaciones_didi`), no desde las vistas.
+
+**Otros criterios en producción:**
+- Sin saldos: `sin_saldos = true` y la pantalla pide capturarlos. Hoy sin ventas: no truena (venta 0, food cost null).
+- Las ventas históricas se ven: junio $24,660.97 netos en 81 tickets; marzo, sólo con importaciones Didi, con comisión real.
+- Cashflow: Σ de obligaciones de las 8 semanas = pendientes del horizonte ($57,600), sin duplicar. El saldo arranca en el total de hoy y encadena. El Didi por cobrar ($137.75) entra en la semana del primer lunes, y las entradas Didi sólo aparecen en semanas con lunes. El escenario pesimista da −20 % exacto en las entradas directas.
+- Tiempos: las RPC del dashboard tardan 633 ms en paralelo (más `generar_obligaciones`); la pantalla muestra contenido en 1.4 s.
+- `limpiar_test.sql`: 0 TEST, cuentas en $0, real intacto.
+
+**360 px:** sin scroll horizontal en /dashboard (mes, desglose de lo comprometido y junio con escenario pesimista). /finanzas redirige a /dashboard.
+
+**Observaciones de los datos reales:**
+- El histórico de octubre tiene 10 pedidos con 169 burgers: muchos días se capturaron como un pedido agregado. Por eso el ticket promedio histórico sale alto ($2,491). Se corrige solo al capturar un pedido por ticket.
+- El último día con ventas es el 10 de octubre: el cashflow promedia las 4 semanas que terminan ahí.
+
+---
+
 ## 6. Pendiente
 
 **Fase 1b pendiente: importador de Soft Restaurant, requiere export real.**
@@ -293,13 +444,19 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 - Decidir si se sincroniza `costo_insumos` con las recetas desde /inventario/recetas.
 - Si ya se pagaron los gastos fijos de octubre, cancelar las obligaciones del 31 oct en Por pagar.
 
+### Siguientes pasos (después de la Fase 3)
+- Capturar los saldos de hoy en /configuracion: activa el dinero libre real.
+- Capturar un pedido por ticket, en vivo, para tener ticket promedio, heatmap y food cost por pedido confiables.
+- Insights con IA sobre los mismos agregados (hoy son reglas).
+- `productos.categoria` en lugar de la regla por nombre `es_burger()`.
+
 ### Pendientes técnicos heredados de la Fase 2
 - Didi: corregir la UNIQUE pérdida de `importaciones_didi` (usar el id de pedido si el reporte lo trae) y conciliar por pedido en vez de por día.
 - Pasar Finanzas y Dashboard a leer del ledger y usar `dia_operativo` para agrupar.
 - Crear `productos.categoria` (el SQL existe en `supabase/add_categoria_productos.sql`, pero no se aplicó).
 
-### Fase 3: dinero libre y cashflow
-**Regla de préstamos (Fase 2.1):** la categoría `prestamo` **NO** entra en OPEX, utilidad operativa ni punto de equilibrio operativo; **SÍ** entra en dinero comprometido (obligaciones que vencen) y en el cashflow proyectado.
+### Fase 3: dinero libre y cashflow (HECHO, ver la sección 4c)
+**Regla de préstamos (Fase 2.1, implementada):** la categoría `prestamo` **NO** entra en OPEX, utilidad operativa ni punto de equilibrio operativo; **SÍ** entra en dinero comprometido (obligaciones que vencen) y en el cashflow proyectado.
 - **Dinero libre** = líquido (Caja + Banco + Terminal) − obligaciones que vencen antes del próximo ingreso fuerte − reserva de impuestos (`tasa_reserva_impuestos` × ventas desde el último pago de impuestos) − reposición de inventario.
 - Proyección de cashflow a 90 días: ventas promedio por día de la semana (operando de martes a domingo) + cobros Didi en `dia_pago_didi` − `generar_obligaciones(negocio, hoy+90)`.
 - Utilidad real: ventas netas − insumos − OPEX (incluye el sueldo del dueño); los retiros quedan fuera.

@@ -1,419 +1,572 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+// Único lugar de análisis. Todo viene agregado de Postgres (RPC dashboard, dinero_comprometido,
+// cashflow_proyectado): el cliente no recibe filas crudas. Días por día operativo (corte 05:00).
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { TrendingUp, TrendingDown, Minus, Info, ChevronRight, AlertTriangle, Lightbulb, CircleAlert } from 'lucide-react';
 import {
-  ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus,
-} from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend, Cell,
 } from 'recharts';
 import BottomNav from '@/components/BottomNav';
 import MasMenu from '@/components/MasMenu';
+import { Header, Chips, Sheet, Cargando, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
-import {
-  monthKey, monthLabel, buildMonthList, aggregateByMonth, calcularVariacion,
-  rankingProductosDelMes, heatmapHoras, barrasDiaSemana, calcularRecords, vacioMes,
-  buildCategoriaMap,
-} from '@/lib/dashboard';
+import { diaOperativo, sumarDias, diasEntre, formatDiaCorto } from '@/lib/dia';
+import { NEGOCIO_ID, CATEGORIAS_GASTO } from '@/lib/negocio';
+import { generarInsights } from '@/lib/insights';
 
-const NEGOCIO_ID = '34797ee1-37fa-4736-ad56-35578a126b08';
-const MESES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+// Canales: paleta validada (dataviz) sobre la superficie #141414, orden fijo
+const CANALES = [
+  { key: 'salon',    label: 'Salón',    color: '#3987e5' },
+  { key: 'didi',     label: 'Didi',     color: '#d95926' },
+  { key: 'whatsapp', label: 'WhatsApp', color: '#199e70' },
+];
+const SEMAFORO = { verde: C.ok, amarillo: C.warn, rojo: C.bad };
+const CAT_LABEL = { ...Object.fromEntries(CATEGORIAS_GASTO.map((c) => [c.key, c.label])), sueldo_dueno: 'Tu sueldo', impuesto: 'Impuestos' };
+const DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const HORAS = [16, 17, 18, 19, 20, 21, 22, 23, 0, 1];
+const TT = { contentStyle: { background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12 }, labelStyle: { color: '#ddd' } };
 
-function shortLabel(key) {
-  const [anio, mes] = key.split('-').map(Number);
-  return `${MESES_CORTO[mes - 1]} ${String(anio).slice(2)}`;
+const n = (x) => Number(x) || 0;
+const pct = (x, d = 1) => (x == null ? '—' : `${(n(x) * 100).toFixed(d)}%`);
+const corto = (x) => (Math.abs(x) >= 1000 ? `$${(x / 1000).toFixed(Math.abs(x) >= 10000 ? 0 : 1)}k` : `$${Math.round(x)}`);
+
+function rango(periodo, desdeOtro, hastaOtro) {
+  const hoy = diaOperativo();
+  if (periodo === 'hoy') return { desde: hoy, hasta: hoy };
+  if (periodo === 'semana') {
+    const dow = new Date(hoy + 'T12:00:00Z').getUTCDay();
+    return { desde: sumarDias(hoy, dow === 0 ? -6 : 1 - dow), hasta: hoy };
+  }
+  if (periodo === 'mes') return { desde: hoy.slice(0, 8) + '01', hasta: hoy };
+  return { desde: desdeOtro || hoy, hasta: hastaOtro || hoy };
 }
 
-function Variacion({ valor }) {
-  if (valor === null || valor === undefined || !isFinite(valor)) {
-    return <span className="text-xs" style={{ color: '#555' }}>— sin comparación</span>;
-  }
-  const subiendo = valor > 0;
-  const plano = Math.round(valor * 10) / 10 === 0;
-  const color = plano ? '#888' : subiendo ? '#22c55e' : '#ef4444';
-  const Icon = plano ? Minus : subiendo ? TrendingUp : TrendingDown;
+// ── Piezas ──
+function Delta({ actual, anterior, menosEsMejor = false }) {
+  if (actual == null || anterior == null || n(anterior) === 0) return <span className="text-xs" style={{ color: C.dimmer }}>sin comparación</span>;
+  const v = (n(actual) - n(anterior)) / Math.abs(n(anterior));
+  const plano = Math.abs(v) < 0.005;
+  const bueno = menosEsMejor ? v < 0 : v > 0;
+  const Icon = plano ? Minus : v > 0 ? TrendingUp : TrendingDown;
+  const color = plano ? C.dim : bueno ? C.ok : C.bad;
   return (
     <span className="flex items-center gap-1 text-xs font-bold" style={{ color }}>
-      <Icon size={12} strokeWidth={2.5} />
-      {Math.abs(valor).toFixed(0)}%
+      <Icon size={12} strokeWidth={2.5} />{Math.abs(v * 100).toFixed(0)}% <span className="font-normal" style={{ color: C.dimmer }}>vs antes</span>
     </span>
   );
 }
 
-function KpiCard({ label, value, variacion }) {
+function InfoBtn({ texto }) {
+  const [abierto, setAbierto] = useState(false);
   return (
-    <div className="rounded-2xl p-3 flex flex-col justify-between"
-      style={{ background: '#141414', border: '1px solid #2a2a2a', minHeight: 56 }}>
-      <p className="text-xs font-bold tracking-wide mb-1" style={{ color: '#888' }}>{label}</p>
-      <p className="text-xl font-bold text-white mb-1">{value}</p>
-      <Variacion valor={variacion} />
+    <>
+      <button type="button" onClick={(e) => { e.stopPropagation(); setAbierto((x) => !x); }} aria-label="¿Qué es esto?"
+        className="flex items-center justify-center shrink-0" style={{ width: 44, height: 44, margin: -12 }}>
+        <Info size={14} style={{ color: abierto ? C.brand : C.dimmer }} />
+      </button>
+      {abierto && <p className="text-xs mt-1 w-full" style={{ color: C.dim }}>{texto}</p>}
+    </>
+  );
+}
+
+function Tarjeta({ titulo, info, children, className = '' }) {
+  return (
+    <div className={`rounded-2xl p-3 ${className}`} style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <p className="text-xs font-bold" style={{ color: C.dim }}>{titulo}</p>
+        {info && <InfoBtn texto={info} />}
+      </div>
+      {children}
     </div>
   );
 }
 
-function SeccionError({ mensaje }) {
+function Falta({ texto, href, accion }) {
   return (
-    <div className="rounded-2xl p-4 text-center" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-      <p className="text-sm" style={{ color: '#ef4444' }}>⚠ {mensaje}</p>
-    </div>
+    <Link href={href} className="flex items-center justify-between gap-2 mt-1 text-sm font-bold" style={{ color: C.warn, minHeight: 44 }}>
+      <span>Falta capturar {texto}</span><span className="flex items-center shrink-0" style={{ color: C.brand }}>{accion}<ChevronRight size={16} /></span>
+    </Link>
+  );
+}
+
+function Seccion({ titulo, children }) {
+  return (
+    <section className="space-y-2">
+      <p className="text-xs font-bold tracking-wider px-1" style={{ color: C.dim }}>{titulo}</p>
+      {children}
+    </section>
   );
 }
 
 export default function DashboardPage() {
-  const [pedidos, setPedidos] = useState(null);
-  const [pedidosError, setPedidosError] = useState(null);
-  const [importsDidi, setImportsDidi] = useState(null);
-  const [didiError, setDidiError] = useState(null);
-  const [insumos, setInsumos] = useState(null);
-  const [insumosError, setInsumosError] = useState(null);
-  const [categoriaMap, setCategoriaMap] = useState({});
-  const [cargando, setCargando] = useState(true);
-  const [selectedKey, setSelectedKey] = useState(null);
+  const [periodo,   setPeriodo]   = useState('mes');
+  const [desdeOtro, setDesdeOtro] = useState('');
+  const [hastaOtro, setHastaOtro] = useState('');
+  const [dash,      setDash]      = useState(null);
+  const [comp,      setComp]      = useState(null);
+  const [cf,        setCf]        = useState({ normal: [], pesimista: [] });
+  const [escenario, setEscenario] = useState('normal');
+  const [cargando,  setCargando]  = useState(true);
+  const [error,     setError]     = useState(null);
+  const [verComp,   setVerComp]   = useState(false);
+  const [celda,     setCelda]     = useState(null);
+  const [ms,        setMs]        = useState(null);
 
-  useEffect(() => {
-    let activo = true;
-    (async () => {
-      // Productos: intentar con categoria; si la columna no existe en la DB, sin ella
-      // (mismo criterio defensivo que /finanzas — evita que un error de schema
-      // tumbe el join anidado de pedido_items más abajo)
-      let { data: productosData, error: prodErr } = await supabase
-        .from('productos').select('id, nombre, categoria').eq('negocio_id', NEGOCIO_ID);
-      if (prodErr) {
-        ({ data: productosData } = await supabase
-          .from('productos').select('id, nombre').eq('negocio_id', NEGOCIO_ID));
-      }
-      if (activo) setCategoriaMap(buildCategoriaMap(productosData));
+  const { desde, hasta } = rango(periodo, desdeOtro, hastaOtro);
 
-      const [pedidosRes, didiRes, insumosRes] = await Promise.allSettled([
-        supabase.from('pedidos')
-          .select('total, canal, fecha, hora, pedido_items(producto_id, cantidad, precio, costo, productos(nombre))')
-          .eq('negocio_id', NEGOCIO_ID)
-          .eq('estado', 'entregado')
-          .eq('cancelado', false),
-        supabase.from('importaciones_didi')
-          .select('venta_bruta, comision_didi, costo_promos, fecha')
-          .eq('negocio_id', NEGOCIO_ID),
-        supabase.from('compras_insumos')
-          .select('monto, fecha')
-          .eq('negocio_id', NEGOCIO_ID),
-      ]);
-      if (!activo) return;
+  const cargar = useCallback(async () => {
+    if (desde > hasta) return;
+    setCargando(true);
+    setError(null);
+    const t0 = performance.now();
+    // Las obligaciones del periodo deben existir para devengar OPEX (idempotente)
+    const finMes = sumarDias(hasta.slice(0, 8) + '01', 40).slice(0, 8) + '01';
+    await supabase.rpc('generar_obligaciones', { p_negocio: NEGOCIO_ID, p_hasta: sumarDias(finMes, -1) });
+    const [d, c, f1, f2] = await Promise.all([
+      supabase.rpc('dashboard', { p_negocio: NEGOCIO_ID, p_desde: desde, p_hasta: hasta }),
+      supabase.rpc('dinero_comprometido', { p_negocio: NEGOCIO_ID, p_horizonte_dias: 30 }),
+      supabase.rpc('cashflow_proyectado', { p_negocio: NEGOCIO_ID, p_semanas: 8, p_factor_ventas: 1 }),
+      supabase.rpc('cashflow_proyectado', { p_negocio: NEGOCIO_ID, p_semanas: 8, p_factor_ventas: 0.8 }),
+    ]);
+    const err = d.error || c.error || f1.error || f2.error;
+    if (err) setError(err.message);
+    setDash(d.data);
+    setComp(c.data);
+    setCf({ normal: f1.data || [], pesimista: f2.data || [] });
+    setMs(Math.round(performance.now() - t0));
+    setCargando(false);
+  }, [desde, hasta]);
 
-      if (pedidosRes.status === 'fulfilled' && !pedidosRes.value.error) {
-        setPedidos(pedidosRes.value.data || []);
-      } else {
-        setPedidos([]);
-        setPedidosError(pedidosRes.value?.error?.message || pedidosRes.reason?.message || 'Error al cargar pedidos');
-      }
+  useEffect(() => { cargar(); }, [cargar]);
 
-      if (didiRes.status === 'fulfilled' && !didiRes.value.error) {
-        setImportsDidi(didiRes.value.data || []);
-      } else {
-        setImportsDidi([]);
-        setDidiError(didiRes.value?.error?.message || didiRes.reason?.message || 'Error al cargar importaciones Didi');
-      }
-
-      if (insumosRes.status === 'fulfilled' && !insumosRes.value.error) {
-        setInsumos(insumosRes.value.data || []);
-      } else {
-        setInsumos([]);
-        setInsumosError(insumosRes.value?.error?.message || insumosRes.reason?.message || 'Error al cargar insumos');
-      }
-
-      setCargando(false);
-    })();
-    return () => { activo = false; };
-  }, []);
-
-  const mesesMap = useMemo(
-    () => aggregateByMonth(pedidos, importsDidi, insumos, categoriaMap),
-    [pedidos, importsDidi, insumos, categoriaMap]
-  );
-
-  const monthList = useMemo(() => {
-    const hoyKey = monthKey(new Date().toISOString().split('T')[0]);
-    const keysConDatos = Object.keys(mesesMap).sort();
-    const minKey = keysConDatos[0] || hoyKey;
-    const maxKey = hoyKey > (keysConDatos[keysConDatos.length - 1] || hoyKey)
-      ? hoyKey
-      : keysConDatos[keysConDatos.length - 1];
-    return buildMonthList(minKey, maxKey);
-  }, [mesesMap]);
-
-  useEffect(() => {
-    if (!selectedKey && monthList.length) {
-      const conDatos = monthList.filter((k) => mesesMap[k]?.tieneDatos);
-      setSelectedKey(conDatos.length ? conDatos[conDatos.length - 1] : monthList[monthList.length - 1]);
-    }
-  }, [monthList, mesesMap, selectedKey]);
-
-  const idx = monthList.indexOf(selectedKey);
-  const mesActual = (selectedKey && mesesMap[selectedKey]) || vacioMes(selectedKey || '');
-  const mesAnteriorKey = idx > 0 ? monthList[idx - 1] : null;
-  const mesAnterior = mesAnteriorKey ? mesesMap[mesAnteriorKey] : null;
-
-  const pedidosDelMes = useMemo(
-    () => (pedidos || []).filter((p) => monthKey(p.fecha) === selectedKey),
-    [pedidos, selectedKey]
-  );
-
-  const ranking = useMemo(() => rankingProductosDelMes(pedidosDelMes), [pedidosDelMes]);
-  const horas = useMemo(() => heatmapHoras(pedidosDelMes), [pedidosDelMes]);
-  const dias = useMemo(() => barrasDiaSemana(pedidosDelMes), [pedidosDelMes]);
-
-  const mesesOrdenados = useMemo(
-    () => monthList.map((k) => mesesMap[k] || vacioMes(k)),
-    [monthList, mesesMap]
-  );
-  const records = useMemo(() => calcularRecords(mesesOrdenados), [mesesOrdenados]);
-
-  const chartData = useMemo(
-    () => mesesOrdenados.map((m) => ({
-      key: m.key,
-      label: shortLabel(m.key),
-      venta: Math.round(m.ventaBruta),
-      ganancia: Math.round(m.gananciaReal),
-    })),
-    [mesesOrdenados]
-  );
-
-  const totalPedidosCanal = mesActual.whatsapp.pedidos + mesActual.manual.pedidos + mesActual.didi.pedidos;
-  const totalGananciaCanal = mesActual.whatsapp.venta + mesActual.manual.venta + mesActual.didi.ganancia;
-  const comisionDidiPct = mesActual.ventaBruta ? (mesActual.comisionDidi / mesActual.ventaBruta) * 100 : 0;
-  const maxHora = Math.max(1, ...horas.map((h) => h.pedidos));
-  const maxDia = Math.max(1, ...dias.map((d) => d.pedidos));
+  const a = dash?.actual || {};
+  const ant = dash?.anterior || {};
+  const ef = dash?.efectivo || {};
+  const inv = dash?.inventario || {};
+  const insights = generarInsights(dash, comp);
+  const sinVentas = !cargando && n(a.tickets) === 0;
+  const hayGastos = !!ef.hay_gastos;
+  const filasCf = cf[escenario];
+  const primeraNeg = filasCf.find((w) => n(w.saldo_final) < 0)?.semana;
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ background: '#0a0a0a' }}>
-      <header className="sticky top-0 z-40 flex items-center justify-between px-4 py-3"
-        style={{ background: '#0a0a0a', borderBottom: '1px solid #1e1e1e' }}>
-        <img src="/logo.png" alt="MR. SMASH" style={{ height: '36px', width: 'auto' }} />
-        <MasMenu />
-      </header>
+    <div className="flex flex-col min-h-screen" style={{ background: C.bg }}>
+      <Header right={<MasMenu />} />
+      <main className="flex-1 px-4 pt-4 pb-32 space-y-5">
 
-      <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
-
-        {/* Selector de mes */}
-        <div className="flex items-center justify-between px-3 py-2 rounded-xl"
-          style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-          <button onClick={() => idx > 0 && setSelectedKey(monthList[idx - 1])}
-            disabled={idx <= 0} className="p-2 rounded-lg"
-            style={{ background: '#1e1e1e', opacity: idx <= 0 ? 0.3 : 1 }}>
-            <ChevronLeft size={18} style={{ color: '#aaa' }} />
-          </button>
-          <p className="text-sm font-bold text-white">{monthLabel(selectedKey)}</p>
-          <button onClick={() => idx < monthList.length - 1 && setSelectedKey(monthList[idx + 1])}
-            disabled={idx >= monthList.length - 1} className="p-2 rounded-lg"
-            style={{ background: '#1e1e1e', opacity: idx >= monthList.length - 1 ? 0.3 : 1 }}>
-            <ChevronRight size={18} style={{ color: '#aaa' }} />
-          </button>
+        {/* ── Periodo ── */}
+        <div className="space-y-2">
+          <Chips options={[{ key: 'hoy', label: 'Hoy' }, { key: 'semana', label: 'Semana' }, { key: 'mes', label: 'Mes' }, { key: 'otro', label: 'Otro' }]}
+            value={periodo} onChange={setPeriodo} />
+          {periodo === 'otro' && (
+            <div className="grid grid-cols-2 gap-2">
+              {[[desdeOtro, setDesdeOtro, 'Desde'], [hastaOtro, setHastaOtro, 'Hasta']].map(([v, set, l]) => (
+                <input key={l} type="date" value={v} aria-label={l} onChange={(e) => set(e.target.value)}
+                  className="w-full px-3 rounded-xl text-white outline-none"
+                  style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 48, colorScheme: 'dark', fontSize: 16 }} />
+              ))}
+            </div>
+          )}
+          <p className="text-xs px-1" style={{ color: C.dimmer }}>
+            {formatDiaCorto(desde)}{desde !== hasta && ` – ${formatDiaCorto(hasta)}`} · comparado con los {diasEntre(desde, hasta) + 1} días anteriores
+          </p>
         </div>
 
-        {cargando ? (
-          <div className="flex justify-center py-12">
-            <div className="w-8 h-8 rounded-full border-2 animate-spin"
-              style={{ borderColor: '#FF4D00', borderTopColor: 'transparent' }} />
-          </div>
+        {cargando && !dash ? <Cargando /> : error ? (
+          <p className="text-sm rounded-2xl p-4" style={{ background: C.surface, color: C.bad }}>⚠ {error}</p>
         ) : (
           <>
-            {!mesActual.tieneDatos ? (
-              <div className="rounded-2xl p-8 text-center" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-                <p className="text-3xl mb-2">📭</p>
-                <p className="font-bold text-white">Sin datos este mes</p>
-              </div>
-            ) : (
-              <>
-                {/* KPIs */}
-                {pedidosError && <SeccionError mensaje={pedidosError} />}
-                <div className="grid grid-cols-2 gap-2">
-                  <KpiCard label="VENTA BRUTA" value={formatMXN(mesActual.ventaBruta)}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.ventaBruta, mesAnterior.ventaBruta) : null} />
-                  <KpiCard label="GANANCIA REAL" value={formatMXN(mesActual.gananciaReal)}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.gananciaReal, mesAnterior.gananciaReal) : null} />
-                  <KpiCard label="TICKET PROMEDIO" value={formatMXN(mesActual.ticketPromedio)}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.ticketPromedio, mesAnterior.ticketPromedio) : null} />
-                  <KpiCard label="PEDIDOS" value={mesActual.pedidosCount}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.pedidosCount, mesAnterior.pedidosCount) : null} />
-                  <KpiCard label="BURGERS VENDIDAS" value={mesActual.burgers}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.burgers, mesAnterior.burgers) : null} />
-                  <KpiCard label="MARGEN NETO" value={`${mesActual.margenNeto.toFixed(0)}%`}
-                    variacion={mesAnterior ? calcularVariacion(mesActual.margenNeto, mesAnterior.margenNeto) : null} />
+            {/* ── 1. Dinero libre ── */}
+            {comp?.sin_saldos ? (
+              <Link href="/configuracion" className="block rounded-3xl p-5" style={{ background: C.surface, border: `1px dashed ${C.warn}` }}>
+                <p className="text-xs font-bold" style={{ color: C.dim }}>DINERO LIBRE</p>
+                <p className="text-lg font-bold text-white mt-1">Primero captura tus saldos</p>
+                <p className="text-sm mt-1" style={{ color: C.dim }}>
+                  Dinos cuánto hay hoy en caja, banco y terminal para saber cuánto es realmente tuyo.
+                  Ya tienes {formatMXN(comp.comprometido)} apartados en pagos próximos.
+                </p>
+                <p className="flex items-center gap-1 text-sm font-bold mt-3" style={{ color: C.brand }}>Capturar saldos <ChevronRight size={16} /></p>
+              </Link>
+            ) : comp && (
+              <button type="button" onClick={() => setVerComp(true)} className="w-full text-left rounded-3xl p-5"
+                style={{ background: C.surface, border: `2px solid ${SEMAFORO[comp.semaforo]}` }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold" style={{ color: C.dim }}>DINERO LIBRE</p>
+                  <span className="flex items-center gap-1 text-xs font-bold" style={{ color: SEMAFORO[comp.semaforo] }}>
+                    <span className="inline-block rounded-full" style={{ width: 10, height: 10, background: SEMAFORO[comp.semaforo] }} />
+                    {comp.semaforo === 'verde' ? 'Tranquilo' : comp.semaforo === 'amarillo' ? 'Justo' : 'No alcanza'}
+                  </span>
                 </div>
-              </>
+                <p className="text-4xl font-bold mt-1" style={{ color: n(comp.dinero_libre) < 0 ? C.bad : '#fff' }}>{formatMXN(comp.dinero_libre)}</p>
+                <p className="text-sm mt-2" style={{ color: C.dim }}>
+                  Tienes {formatMXN(comp.dinero_total)} · ya está apartado {formatMXN(comp.comprometido)} · Didi te debe {formatMXN(comp.por_cobrar_didi)}
+                </p>
+                <p className="flex items-center gap-1 text-xs font-bold mt-2" style={{ color: C.brand }}>Ver qué está apartado <ChevronRight size={14} /></p>
+              </button>
             )}
 
-            {/* Tendencia histórica */}
-            <div className="rounded-2xl p-3" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-              <p className="text-xs font-bold tracking-wider mb-2" style={{ color: '#888' }}>TENDENCIA MENSUAL</p>
-              {chartData.length ? (
-                <div style={{ width: '100%', height: 220 }}>
+            {/* ── 2. KPIs ── */}
+            <div className="grid grid-cols-2 gap-2">
+              <Tarjeta titulo="LO QUE ENTRÓ (NETO)" info="Lo que vendiste menos comisiones, promos y retenciones de Didi.">
+                <p className="text-xl font-bold text-white">{formatMXN(a.venta_neta)}</p>
+                {sinVentas ? <Falta texto="ventas" href="/nuevo-pedido" accion="Pedido" /> : <Delta actual={a.venta_neta} anterior={ant.venta_neta} />}
+              </Tarjeta>
+              <Tarjeta titulo="LO QUE TE QUEDA DESPUÉS DE TODO" info="Venta neta menos costo de lo vendido y gastos fijos del periodo (sin préstamos ni retiros).">
+                <p className="text-xl font-bold" style={{ color: n(a.utilidad_operativa) < 0 ? C.bad : '#fff' }}>{formatMXN(a.utilidad_operativa)}</p>
+                {!hayGastos ? <Falta texto="gastos fijos" href="/gastos" accion="Gastos" /> : <Delta actual={a.utilidad_operativa} anterior={ant.utilidad_operativa} />}
+              </Tarjeta>
+              <Tarjeta titulo="COSTO DE COMIDA" info={`De cada $100 que entran, cuánto se va en ingredientes y empaque. Tu meta: ${pct(a.meta_food_cost, 0)}.`}>
+                <p className="text-xl font-bold" style={{ color: a.food_cost == null ? '#fff' : n(a.food_cost) <= n(a.meta_food_cost) ? C.ok : C.bad }}>{pct(a.food_cost)}</p>
+                <Delta actual={a.food_cost} anterior={ant.food_cost} menosEsMejor />
+                {a.food_cost_real != null && <p className="text-xs" style={{ color: C.dim }}>Real por conteo: {pct(a.food_cost_real)}</p>}
+              </Tarjeta>
+              <Tarjeta titulo="TICKET PROMEDIO" info="Lo que deja en promedio cada pedido (neto).">
+                <p className="text-xl font-bold text-white">{a.ticket_promedio == null ? '—' : formatMXN(a.ticket_promedio)}</p>
+                <Delta actual={a.ticket_promedio} anterior={ant.ticket_promedio} />
+              </Tarjeta>
+              <Tarjeta titulo="BURGERS VENDIDAS" info="Burgers de pedidos capturados con productos. Las importaciones de Didi no traen productos.">
+                <p className="text-xl font-bold text-white">{n(a.burgers)}</p>
+                <Delta actual={a.burgers} anterior={ant.burgers} />
+              </Tarjeta>
+              <Tarjeta titulo="PUNTO DE EQUILIBRIO" info="Burgers que necesitas vender en el periodo para cubrir tus gastos fijos.">
+                {!hayGastos ? <Falta texto="gastos fijos" href="/gastos" accion="Gastos" />
+                  : a.equilibrio_burgers == null ? <p className="text-sm mt-1" style={{ color: C.dim }}>Sin ventas para calcularlo</p> : (
+                    <>
+                      <p className="text-xl font-bold text-white">{n(a.burgers)} <span className="text-sm" style={{ color: C.dim }}>de {a.equilibrio_burgers}</span></p>
+                      <div className="h-2 rounded-full mt-1 overflow-hidden" style={{ background: C.surface2 }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, (n(a.burgers) / n(a.equilibrio_burgers)) * 100)}%`, background: n(a.burgers) >= n(a.equilibrio_burgers) ? C.ok : C.warn }} />
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: C.dim }}>{formatMXN(a.equilibrio_pesos)} netos</p>
+                    </>
+                  )}
+              </Tarjeta>
+            </div>
+
+            {/* ── 3. Insights ── */}
+            <Seccion titulo="QUÉ CAMBIAR">
+              {insights.length === 0 ? (
+                <p className="text-sm rounded-2xl p-4" style={{ background: C.surface, color: C.dim }}>Nada urgente con los datos del periodo.</p>
+              ) : insights.map((i) => {
+                const color = i.nivel === 'rojo' ? C.bad : i.nivel === 'amarillo' ? C.warn : C.brand;
+                const Icon = i.nivel === 'rojo' ? CircleAlert : i.nivel === 'amarillo' ? AlertTriangle : Lightbulb;
+                const cuerpo = (
+                  <>
+                    <p className="flex items-start gap-2 font-bold text-white text-sm"><Icon size={16} className="shrink-0 mt-0.5" style={{ color }} />{i.titulo}</p>
+                    <p className="text-xs mt-1" style={{ color: C.dim }}>{i.texto}</p>
+                    <p className="text-xs mt-1 font-bold" style={{ color }}>→ {i.accion}</p>
+                    {i.impacto > 0 && <p className="text-xs mt-1" style={{ color: C.dimmer }}>Impacto estimado ≈ {formatMXN(i.impacto)}</p>}
+                  </>
+                );
+                const st = { background: C.surface, borderLeft: `4px solid ${color}` };
+                return i.href
+                  ? <Link key={i.id} href={i.href} className="block rounded-2xl p-3" style={st}>{cuerpo}</Link>
+                  : <div key={i.id} className="rounded-2xl p-3" style={st}>{cuerpo}</div>;
+              })}
+            </Seccion>
+
+            {/* ── 4. Estado de resultados ── */}
+            <Seccion titulo="CÓMO SE FUE TU DINERO">
+              <div className="rounded-2xl p-3 text-sm" style={{ background: C.surface }}>
+                {(() => {
+                  const base = n(a.venta_neta);
+                  const fila = (label, valor, { fuerte, neg, sangria, color } = {}) => (
+                    <div key={label} className={`flex items-center justify-between gap-2 py-1.5 ${fuerte ? 'font-bold' : ''}`}
+                      style={{ borderTop: fuerte ? `1px solid ${C.border}` : 'none', paddingLeft: sangria ? 12 : 0 }}>
+                      <span style={{ color: fuerte ? '#fff' : C.dim }}>{label}</span>
+                      <span className="text-right shrink-0" style={{ color: color || (fuerte ? '#fff' : '#ddd') }}>
+                        {(neg && n(valor)) || (!neg && n(valor) < 0) ? '−' : ''}{formatMXN(Math.abs(n(valor)))}
+                        <span className="text-xs ml-2" style={{ color: C.dimmer }}>{base > 0 ? pct(Math.abs(n(valor)) / base, 0) : ''}</span>
+                      </span>
+                    </div>
+                  );
+                  const opex = Object.entries(a.opex || {}).sort((x, y) => y[1] - x[1]);
+                  return (
+                    <>
+                      {fila('Vendiste', a.venta_bruta)}
+                      {n(a.comision_didi) + n(a.promos_didi) + n(a.retenciones_didi) > 0 && (
+                        <>
+                          {fila('Comisión Didi', a.comision_didi, { neg: true, sangria: true })}
+                          {fila('Promos Didi', a.promos_didi, { neg: true, sangria: true })}
+                          {n(a.retenciones_didi) > 0 && fila('Retenciones Didi', a.retenciones_didi, { neg: true, sangria: true })}
+                        </>
+                      )}
+                      {fila('Lo que entró (neto)', a.venta_neta, { fuerte: true })}
+                      {fila('Ingredientes y empaque', a.costo_ventas, { neg: true })}
+                      {fila('Margen después de comida', a.margen_bruto, { fuerte: true })}
+                      {opex.length ? opex.map(([k, v]) => fila(CAT_LABEL[k] || k, v, { neg: true, sangria: true }))
+                        : <Falta texto="gastos fijos" href="/gastos" accion="Gastos" />}
+                      {fila('Lo que te queda después de todo', a.utilidad_operativa, { fuerte: true, color: n(a.utilidad_operativa) < 0 ? C.bad : C.ok })}
+                      {n(a.prestamos) > 0 && fila('Pago de préstamos', a.prestamos, { neg: true })}
+                      {n(a.retiros) > 0 && fila('Retiros tuyos', a.retiros, { neg: true })}
+                      <div className="text-xs mt-2 space-y-1" style={{ color: C.dimmer }}>
+                        {n(a.bruta_didi_estimada) > 0 && <p>Didi capturado: comisión, promos y retenciones estimadas con tus tasas reales.</p>}
+                        {n(a.costo_respaldo) > 0 && <p>{formatMXN(a.costo_respaldo)} del costo usa el costo registrado del producto (sin receta o venta anterior al inventario).</p>}
+                        {n(a.costo_estimado_import) > 0 && <p>{formatMXN(a.costo_estimado_import)} estimado para ventas Didi importadas (no traen productos).</p>}
+                        {a.prime_cost != null && <p>Comida + nómina + tu sueldo = {pct(a.prime_cost, 0)} de lo que entra. Reserva de impuestos del periodo: {formatMXN(a.reserva_impuestos)}.</p>}
+                        {a.margen_seguridad != null && (n(a.margen_seguridad) >= 0
+                          ? <p>Margen de seguridad: vendes {pct(a.margen_seguridad, 0)} arriba de tu punto de equilibrio.</p>
+                          : <p>Estás {pct(-n(a.margen_seguridad), 0)} debajo de tu punto de equilibrio.</p>)}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </Seccion>
+
+            {/* ── 5. Gráficas ── */}
+            <Seccion titulo="VENTAS POR DÍA (NETO)">
+              <div className="rounded-2xl p-2" style={{ background: C.surface }}>
+                {(dash.diario || []).length === 0 ? <Falta texto="ventas" href="/nuevo-pedido" accion="Pedido" /> : (
+                  <div style={{ height: 200 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={dash.diario.map((d) => ({ ...d, label: d.dia.slice(8, 10) }))} margin={{ top: 8, right: 4, left: -16, bottom: 0 }}>
+                        <CartesianGrid vertical={false} stroke={C.surface2} />
+                        <XAxis dataKey="label" tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={corto} />
+                        <Tooltip {...TT} formatter={(v, k) => [formatMXN(v), CANALES.find((c) => c.key === k)?.label]} labelFormatter={(l, p) => p?.[0] ? formatDiaCorto(p[0].payload.dia) : l} cursor={{ fill: '#ffffff0d' }} />
+                        <Legend formatter={(k) => <span style={{ color: C.dim, fontSize: 12 }}>{CANALES.find((c) => c.key === k)?.label}</span>} iconSize={10} />
+                        {CANALES.map((c, i) => <Bar key={c.key} dataKey={c.key} stackId="v" fill={c.color} stroke={C.surface} strokeWidth={1}
+                          radius={i === CANALES.length - 1 ? [4, 4, 0, 0] : 0} />)}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-x-3 gap-y-1 px-2 pb-1 text-xs" style={{ color: C.dim }}>
+                  {CANALES.map((c) => {
+                    const v = n(a.canales?.[c.key]?.neta);
+                    return v > 0 && <span key={c.key}>{c.label} {pct(v / n(a.venta_neta), 0)}</span>;
+                  })}
+                </div>
+              </div>
+            </Seccion>
+
+            <Seccion titulo="¿A QUÉ HORA TE PIDEN?">
+              <div className="rounded-2xl p-3" style={{ background: C.surface }}>
+                {(dash.heatmap || []).length === 0 ? (
+                  <p className="text-sm" style={{ color: C.dim }}>Sin pedidos capturados al momento en el periodo. Captura en vivo para ver tus horas pico.</p>
+                ) : (() => {
+                  const mapa = {}; let max = 1;
+                  dash.heatmap.forEach((h) => { mapa[`${h.dow}-${h.hora}`] = n(h.tickets); max = Math.max(max, n(h.tickets)); });
+                  return (
+                    <>
+                      <div className="grid gap-0.5" style={{ gridTemplateColumns: `28px repeat(${HORAS.length}, 1fr)` }}>
+                        <span />
+                        {HORAS.map((h) => <span key={h} className="text-center" style={{ color: C.dimmer, fontSize: 9 }}>{h}</span>)}
+                        {[2, 3, 4, 5, 6, 7, 1].map((d) => [
+                          <span key={`l${d}`} className="text-xs" style={{ color: C.dimmer }}>{DIAS[d]}</span>,
+                          ...HORAS.map((h) => {
+                            const v = mapa[`${d}-${h}`] || 0;
+                            return <button key={`${d}-${h}`} type="button" onClick={() => setCelda({ d, h, v })} aria-label={`${DIAS[d]} ${h}:00, ${v} pedidos`}
+                              className="rounded" style={{ height: 22, background: v ? `rgba(255,77,0,${0.18 + 0.82 * (v / max)})` : C.surface2 }} />;
+                          }),
+                        ])}
+                      </div>
+                      <p className="text-xs mt-2" style={{ color: C.dim }}>
+                        {celda ? `${DIAS[celda.d]} ${celda.h}:00 → ${celda.v} pedidos` : 'Toca un cuadro para ver los pedidos.'} Basado en {dash.heatmap_cobertura?.con_hora} de {dash.heatmap_cobertura?.total} pedidos capturados en vivo.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="CUÁNTO TE DEJA CADA BURGER POR CANAL">
+              <div className="rounded-2xl p-2" style={{ background: C.surface }}>
+                {(() => {
+                  const burgers = {};
+                  (dash.margenes || []).filter((m) => m.burger).forEach((m) => {
+                    (burgers[m.nombre] ||= { nombre: m.nombre.replace(' Smash', '').replace('Smash ', ''), receta: m.tiene_receta })[m.canal] = n(m.margen);
+                  });
+                  const datos = Object.values(burgers);
+                  if (!datos.length) return <Falta texto="productos" href="/inventario/recetas" accion="Recetas" />;
+                  return (
+                    <>
+                      <div style={{ height: 40 + datos.length * 52 }}>
+                        <ResponsiveContainer>
+                          <BarChart data={datos} layout="vertical" margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barGap={2}>
+                            <CartesianGrid horizontal={false} stroke={C.surface2} />
+                            <XAxis type="number" tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={corto} />
+                            <YAxis type="category" dataKey="nombre" width={88} tick={{ fill: C.dim, fontSize: 11 }} axisLine={false} tickLine={false} />
+                            <Tooltip {...TT} formatter={(v, k) => [formatMXN(v), CANALES.find((c) => c.key === k)?.label]} cursor={{ fill: '#ffffff0d' }} />
+                            <Legend formatter={(k) => <span style={{ color: C.dim, fontSize: 12 }}>{CANALES.find((c) => c.key === k)?.label}</span>} iconSize={10} />
+                            {CANALES.map((c) => <Bar key={c.key} dataKey={c.key} fill={c.color} radius={[0, 4, 4, 0]} barSize={10} />)}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="text-xs px-2 pb-1" style={{ color: C.dimmer }}>
+                        Precio neto del canal menos costo de receta. Didi neto = precio Didi × (1 − {pct(n(dash.tasas_didi?.tasa_comision) + n(dash.tasas_didi?.tasa_promos) + n(dash.tasas_didi?.tasa_retenciones), 1)}).
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="LO QUE MÁS VENDES">
+              <div className="rounded-2xl p-3 space-y-2" style={{ background: C.surface }}>
+                {(dash.productos || []).length === 0 ? <p className="text-sm" style={{ color: C.dim }}>Sin productos en el periodo.</p>
+                  : (() => {
+                    const total = dash.productos.reduce((s, p) => s + n(p.unidades), 0);
+                    return dash.productos.slice(0, 8).map((p) => (
+                      <div key={p.nombre}>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-white truncate">{p.nombre}</span>
+                          <span className="shrink-0" style={{ color: C.dim }}>{n(p.unidades)} · {pct(n(p.unidades) / total, 0)}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full mt-1" style={{ background: C.surface2 }}>
+                          <div className="h-full rounded-full" style={{ width: `${(n(p.unidades) / n(dash.productos[0].unidades)) * 100}%`, background: C.brand }} />
+                        </div>
+                      </div>
+                    ));
+                  })()}
+              </div>
+            </Seccion>
+
+            <Seccion titulo="COSTO DE COMIDA POR SEMANA">
+              <div className="rounded-2xl p-2" style={{ background: C.surface }}>
+                <div style={{ height: 170 }}>
                   <ResponsiveContainer>
-                    <LineChart data={chartData}
-                      onClick={(s) => { const k = s?.activePayload?.[0]?.payload?.key; if (k) setSelectedKey(k); }}>
-                      <CartesianGrid stroke="#1e1e1e" vertical={false} />
-                      <XAxis dataKey="label" stroke="#555" tick={{ fontSize: 10, fill: '#888' }} />
-                      <YAxis stroke="#555" tick={{ fontSize: 10, fill: '#888' }} width={40}
-                        tickFormatter={(v) => v >= 1000 ? `${Math.round(v / 1000)}k` : v} />
-                      <Tooltip
-                        contentStyle={{ background: '#1e1e1e', border: '1px solid #2a2a2a', borderRadius: 8 }}
-                        labelStyle={{ color: '#fff' }}
-                        formatter={(v) => formatMXN(v)} />
-                      <Line type="monotone" dataKey="venta" name="Venta bruta" stroke="#FF4D00" strokeWidth={2}
-                        dot={{ r: 3, fill: '#FF4D00' }} activeDot={{ r: 5, cursor: 'pointer' }} />
-                      <Line type="monotone" dataKey="ganancia" name="Ganancia real" stroke="#22c55e" strokeWidth={2}
-                        dot={{ r: 3, fill: '#22c55e' }} activeDot={{ r: 5, cursor: 'pointer' }} />
-                    </LineChart>
+                    <BarChart data={(dash.fc_semanal || []).map((s) => ({ ...s, label: s.semana.slice(5).replace('-', '/'), fc: s.fc == null ? null : n(s.fc) * 100 }))}
+                      margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke={C.surface2} />
+                      <XAxis dataKey="label" tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
+                      <Tooltip {...TT} formatter={(v) => [`${n(v).toFixed(1)}%`, 'Costo de comida']} labelFormatter={(l) => `Semana del ${l}`} cursor={{ fill: '#ffffff0d' }} />
+                      <ReferenceLine y={n(a.meta_food_cost) * 100} stroke={C.ok} strokeDasharray="4 4"
+                        label={{ value: `meta ${pct(a.meta_food_cost, 0)}`, fill: C.ok, fontSize: 10, position: 'insideTopRight' }} />
+                      <Bar dataKey="fc" radius={[4, 4, 0, 0]} barSize={18}>
+                        {(dash.fc_semanal || []).map((s) => <Cell key={s.semana} fill={n(s.fc) > n(a.meta_food_cost) ? C.bad : C.ok} />)}
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
-              ) : (
-                <p className="text-sm py-6 text-center" style={{ color: '#555' }}>Sin historial todavía.</p>
-              )}
-              <div className="flex gap-4 justify-center mt-1">
-                <span className="flex items-center gap-1.5 text-xs" style={{ color: '#aaa' }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#FF4D00', display: 'inline-block' }} /> Venta bruta
-                </span>
-                <span className="flex items-center gap-1.5 text-xs" style={{ color: '#aaa' }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 5, background: '#22c55e', display: 'inline-block' }} /> Ganancia real
-                </span>
               </div>
-            </div>
+            </Seccion>
 
-            {mesActual.tieneDatos && (
-              <>
-                {/* Mix de canal */}
-                {didiError && <SeccionError mensaje={didiError} />}
-                <div className="rounded-2xl p-4" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-                  <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>MIX DE CANAL</p>
-
-                  {[
-                    { label: 'WhatsApp', pedidos: mesActual.whatsapp.pedidos, ganancia: mesActual.whatsapp.venta, color: '#25D366' },
-                    { label: 'Salón',    pedidos: mesActual.manual.pedidos,   ganancia: mesActual.manual.venta,   color: '#888' },
-                    { label: 'Didi',     pedidos: mesActual.didi.pedidos,     ganancia: mesActual.didi.ganancia,  color: '#FF4D00' },
-                  ].map(({ label, pedidos: n, ganancia, color }) => {
-                    const pctPedidos = totalPedidosCanal ? (n / totalPedidosCanal) * 100 : 0;
-                    const pctGanancia = totalGananciaCanal ? (ganancia / totalGananciaCanal) * 100 : 0;
-                    return (
-                      <div key={label} className="mb-3 last:mb-0">
-                        <div className="flex justify-between text-xs mb-1">
-                          <span style={{ color: '#ccc', fontWeight: 'bold' }}>{label}</span>
-                          <span style={{ color: '#888' }}>
-                            {n} pedidos ({pctPedidos.toFixed(0)}%) · {pctGanancia.toFixed(0)}% ganancia
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full overflow-hidden" style={{ background: '#1e1e1e' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pctPedidos}%`, background: color }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  <div className="mt-3 pt-3 flex justify-between items-center" style={{ borderTop: '1px solid #1e1e1e' }}>
-                    <span className="text-xs" style={{ color: '#888' }}>Comisión Didi pagada</span>
-                    <span className="text-sm font-bold" style={{ color: '#FF4D00' }}>
-                      {formatMXN(mesActual.comisionDidi)} ({comisionDidiPct.toFixed(1)}% de venta bruta)
-                    </span>
-                  </div>
+            {/* ── 6. Cashflow ── */}
+            <Seccion titulo="TU DINERO LAS PRÓXIMAS 8 SEMANAS">
+              <div className="rounded-2xl p-2 space-y-2" style={{ background: C.surface }}>
+                <Chips options={[{ key: 'normal', label: 'Normal' }, { key: 'pesimista', label: 'Ventas −20%' }]} value={escenario} onChange={setEscenario} />
+                {comp?.sin_saldos && <p className="text-xs px-1" style={{ color: C.warn }}>Arranca en $0 porque no has capturado saldos.</p>}
+                <div style={{ height: 200 }}>
+                  <ResponsiveContainer>
+                    <ComposedChart data={filasCf.map((w) => ({
+                      label: `S${w.semana}`, entradas: n(w.entradas_directas) + n(w.entradas_didi),
+                      salidas: -(n(w.compras) + n(w.obligaciones) + n(w.sueldo_dueno) + n(w.retiros)), saldo: n(w.saldo_final),
+                    }))} margin={{ top: 8, right: 4, left: -12, bottom: 0 }} stackOffset="sign">
+                      <CartesianGrid vertical={false} stroke={C.surface2} />
+                      <XAxis dataKey="label" tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: C.dimmer, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={corto} />
+                      <Tooltip {...TT} formatter={(v, k) => [formatMXN(Math.abs(v)), { entradas: 'Entra', salidas: 'Sale', saldo: 'Saldo' }[k]]} cursor={{ fill: '#ffffff0d' }} />
+                      <Legend formatter={(k) => <span style={{ color: C.dim, fontSize: 12 }}>{{ entradas: 'Entra', salidas: 'Sale', saldo: 'Saldo al cierre' }[k]}</span>} iconSize={10} />
+                      <ReferenceLine y={0} stroke={C.border} />
+                      <Bar dataKey="entradas" stackId="f" fill="#199e70" radius={[4, 4, 0, 0]} barSize={14} />
+                      <Bar dataKey="salidas" stackId="f" fill="#d95926" radius={[4, 4, 0, 0]} barSize={14} />
+                      <Line dataKey="saldo" stroke="#3987e5" strokeWidth={2} dot={{ r: 4, fill: '#3987e5', stroke: C.surface, strokeWidth: 2 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs" style={{ color: C.dim }}>
+                    <thead>
+                      <tr className="text-left" style={{ color: C.dimmer }}>
+                        <th className="py-1 font-normal">Semana</th><th className="font-normal text-right">Entra</th>
+                        <th className="font-normal text-right">Sale</th><th className="font-normal text-right">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filasCf.map((w) => {
+                        const neg = w.semana === primeraNeg;
+                        return (
+                          <tr key={w.semana} style={{ borderTop: `1px solid ${C.surface2}`, background: neg ? `${C.bad}1a` : 'transparent' }}>
+                            <td className="py-1.5">{formatDiaCorto(String(w.desde).slice(0, 10))}</td>
+                            <td className="text-right">{formatMXN(n(w.entradas_directas) + n(w.entradas_didi))}</td>
+                            <td className="text-right">{formatMXN(n(w.compras) + n(w.obligaciones) + n(w.sueldo_dueno) + n(w.retiros))}</td>
+                            <td className="text-right font-bold" style={{ color: n(w.saldo_final) < 0 ? C.bad : '#fff' }}>{formatMXN(w.saldo_final)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {primeraNeg && <p className="text-xs px-1 font-bold" style={{ color: C.bad }}>⚠ En la semana {primeraNeg} te quedarías en negativo.</p>}
+                <p className="text-xs px-1" style={{ color: C.dimmer }}>
+                  Ventas: promedio por día de las 4 semanas al {filasCf[0] ? formatDiaCorto(String(filasCf[0].ventana_hasta).slice(0, 10)) : '—'} (lunes cerrado).
+                  Didi paga el lunes de la semana siguiente. Salidas: compras promedio, pagos programados, tu sueldo y retiros.
+                </p>
+              </div>
+            </Seccion>
 
-                {/* Ranking de productos */}
-                <div className="rounded-2xl overflow-hidden" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-                  <div className="px-4 py-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
-                    <p className="text-xs font-bold tracking-wider" style={{ color: '#888' }}>RANKING DE PRODUCTOS</p>
-                  </div>
-                  {ranking.length ? ranking.map((p) => (
-                    <div key={p.nombre} className="flex items-center justify-between px-4 py-3"
-                      style={{ borderBottom: '1px solid #1e1e1e' }}>
-                      <div>
-                        <p className="text-sm text-white">{p.nombre}</p>
-                        <p className="text-xs" style={{ color: '#666' }}>{p.cantidad} uds</p>
-                      </div>
-                      <span className="font-bold" style={{ color: '#22c55e' }}>{formatMXN(p.ganancia)}</span>
-                    </div>
-                  )) : (
-                    <p className="px-4 py-6 text-sm text-center" style={{ color: '#555' }}>
-                      Sin detalle de productos (solo pedidos de Didi este mes, sin desglose por producto).
-                    </p>
+            {/* ── 7. Inventario y efectivo ── */}
+            <Seccion titulo="INVENTARIO Y EFECTIVO">
+              <div className="grid grid-cols-2 gap-2">
+                <Tarjeta titulo="INVENTARIO" info="Lo que vale lo que tienes en bodega, al costo promedio.">
+                  {n(inv.contados) === 0 ? <Falta texto="tu primer conteo" href="/inventario/conteo" accion="Contar" /> : (
+                    <>
+                      <p className="text-xl font-bold text-white">{formatMXN(inv.valor)}</p>
+                      <p className="text-xs" style={{ color: C.dim }}>{inv.dias_inventario != null ? `≈ ${inv.dias_inventario} días de venta` : '—'}</p>
+                    </>
                   )}
-                </div>
-
-                {/* Operación */}
-                <div className="rounded-2xl p-4" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-                  <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>PEDIDOS POR HORA</p>
-                  <div className="flex gap-px">
-                    {horas.map((h) => (
-                      <div key={h.hora} className="flex-1 rounded-sm" title={`${h.hora}:00 — ${h.pedidos} pedidos`}
-                        style={{
-                          height: 28,
-                          background: h.pedidos ? `rgba(255,77,0,${0.15 + 0.85 * (h.pedidos / maxHora)})` : '#1a1a1a',
-                        }} />
-                    ))}
+                </Tarjeta>
+                <Tarjeta titulo="MERMA" info="Lo que se tiró o faltó en conteos, en pesos.">
+                  <p className="text-xl font-bold" style={{ color: n(a.merma_pct) > 0.03 ? C.bad : '#fff' }}>{formatMXN(a.merma)}</p>
+                  <p className="text-xs" style={{ color: C.dim }}>{a.merma_pct != null ? `${pct(a.merma_pct)} de la venta` : '—'}</p>
+                </Tarjeta>
+                <Tarjeta titulo="TE ALCANZA PARA" info="Días que aguantas con tu efectivo pagando gastos fijos y compras, sin vender nada.">
+                  {ef.sin_saldos ? <Falta texto="saldos" href="/configuracion" accion="Saldos" />
+                    : <p className="text-xl font-bold text-white">{ef.runway_dias == null ? '—' : `${ef.runway_dias} días`}</p>}
+                  <p className="text-xs" style={{ color: C.dim }}>Gasto fijo {formatMXN(ef.gasto_fijo_diario)}/día</p>
+                </Tarjeta>
+                <Tarjeta titulo="DIFERENCIAS DE CAJA" info="Suma de faltantes y sobrantes de tus cortes en el periodo.">
+                  <p className="text-xl font-bold" style={{ color: n(a.diferencias_corte) < 0 ? C.bad : '#fff' }}>{formatMXN(a.diferencias_corte)}</p>
+                  <p className="text-xs" style={{ color: C.dim }}>Retiros tuyos {formatMXN(a.retiros)}</p>
+                </Tarjeta>
+              </div>
+              <div className="rounded-2xl p-3 text-sm space-y-1" style={{ background: C.surface }}>
+                {(ef.cuentas || []).map((c) => (
+                  <div key={c.clave} className="flex justify-between">
+                    <span style={{ color: C.dim }}>{c.nombre}{c.clave === 'didi' && ' (no disponible aún)'}</span>
+                    <span className="font-bold text-white">{formatMXN(c.saldo)}</span>
                   </div>
-                  <div className="flex justify-between text-xs mt-1" style={{ color: '#555' }}>
-                    <span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>23h</span>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl p-4" style={{ background: '#141414', border: '1px solid #2a2a2a' }}>
-                  <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>PEDIDOS POR DÍA</p>
-                  <div className="space-y-2">
-                    {dias.map((d) => (
-                      <div key={d.label} className="flex items-center gap-2">
-                        <span className="text-xs w-8" style={{ color: '#888' }}>{d.label}</span>
-                        <div className="flex-1 h-3 rounded-full overflow-hidden" style={{ background: '#1e1e1e' }}>
-                          <div className="h-full rounded-full" style={{ width: `${(d.pedidos / maxDia) * 100}%`, background: '#FF4D00' }} />
-                        </div>
-                        <span className="text-xs w-6 text-right" style={{ color: '#aaa' }}>{d.pedidos}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Récords históricos */}
-            {insumosError && <SeccionError mensaje={insumosError} />}
-            <div className="rounded-2xl p-4" style={{ background: 'linear-gradient(135deg, #141414 0%, #1a1a0a 100%)', border: '1px solid #2a2a0a' }}>
-              <p className="text-xs font-bold tracking-wider mb-3" style={{ color: '#888' }}>RÉCORDS HISTÓRICOS</p>
-              {records ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Mejor mes en venta</p>
-                      <p className="text-sm font-bold text-white">{records.mejorVenta.label}</p>
-                      <p className="text-sm font-bold" style={{ color: '#FF4D00' }}>{formatMXN(records.mejorVenta.ventaBruta)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Mejor mes en ganancia</p>
-                      <p className="text-sm font-bold text-white">{records.mejorGanancia.label}</p>
-                      <p className="text-sm font-bold" style={{ color: '#22c55e' }}>{formatMXN(records.mejorGanancia.gananciaReal)}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-3" style={{ borderTop: '1px solid #2a2a2a' }}>
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Venta bruta acumulada</p>
-                      <p className="text-sm font-bold text-white">{formatMXN(records.totales.ventaBruta)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Ganancia real acumulada</p>
-                      <p className="text-sm font-bold text-white">{formatMXN(records.totales.gananciaReal)}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Pedidos totales</p>
-                      <p className="text-sm font-bold text-white">{records.totales.pedidosCount}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs" style={{ color: '#666' }}>Burgers vendidas</p>
-                      <p className="text-sm font-bold text-white">{records.totales.burgers}</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-center py-2" style={{ color: '#555' }}>Sin historial todavía.</p>
-              )}
-            </div>
+                ))}
+                {n(inv.productos_sin_receta) > 0 && (
+                  <Link href="/inventario/recetas" className="flex justify-between pt-2 text-xs" style={{ color: C.warn, minHeight: 32 }}>
+                    <span>{inv.productos_sin_receta} productos sin receta usan su costo registrado</span><ChevronRight size={14} />
+                  </Link>
+                )}
+              </div>
+              {ms != null && <p className="text-xs text-center" style={{ color: '#444' }}>Cargó en {(ms / 1000).toFixed(1)} s</p>}
+            </Seccion>
           </>
         )}
       </main>
+
+      {/* Desglose de lo comprometido */}
+      <Sheet open={verComp && !!comp} title="Lo que ya está apartado" onClose={() => setVerComp(false)}>
+        {comp && (
+          <div className="space-y-1">
+            {(comp.lineas || []).map((l, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 py-2" style={{ borderBottom: `1px solid ${C.surface2}` }}>
+                <span className="min-w-0">
+                  <span className="block text-sm text-white truncate">{l.concepto}</span>
+                  <span className="block text-xs" style={{ color: l.vencida ? C.bad : C.dimmer }}>
+                    {l.vence ? `${l.vencida ? 'Venció' : 'Vence'} ${formatDiaCorto(l.vence)}` : l.tipo === 'reposicion' ? 'Para reponer insumos' : 'Apártalo cada mes'}
+                  </span>
+                </span>
+                <span className="font-bold text-white shrink-0">{formatMXN(l.monto)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between pt-2 font-bold">
+              <span className="text-white">Total apartado</span><span className="text-white">{formatMXN(comp.comprometido)}</span>
+            </div>
+            <p className="text-xs pt-1" style={{ color: C.dimmer }}>Pagos de los próximos {comp.horizonte_dias} días (incluye vencidos), reposición de inventario e impuestos del mes.</p>
+            <Link href="/gastos" className="flex items-center justify-center gap-1 rounded-xl font-bold mt-2"
+              style={{ background: C.surface2, color: C.brand, minHeight: 48 }}>Ir a Por pagar <ChevronRight size={16} /></Link>
+          </div>
+        )}
+      </Sheet>
 
       <BottomNav />
     </div>

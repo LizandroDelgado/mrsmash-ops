@@ -12,7 +12,7 @@ import { diaOperativo, sumarDias, formatDiaCorto } from '@/lib/dia';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
 import {
   CATEGORIAS_INSUMO, UNIDAD_GRANDE, fmtCantidad, aGrande, deGrande, costoGrande,
-  listaCompras, textoListaCompras, copiarTexto,
+  textoListaCompras, copiarTexto,
 } from '@/lib/inventario';
 
 const MOTIVOS_MERMA = [
@@ -39,18 +39,21 @@ export default function InventarioPage() {
   const [conteoAbierto, setConteoAbierto] = useState(false);
   const [periodo,     setPeriodo]     = useState('semana');
   const [fc,          setFc]          = useState(null);
+  const [lista,       setLista]       = useState([]);
   const [copiado,     setCopiado]     = useState(false);
   const [detalle,     setDetalle]     = useState(null);   // insumo en edición
   const [merma,       setMerma]       = useState(null);   // { insumo } o {} para elegir
 
   const cargar = useCallback(async () => {
-    const [st, cfg, prov, rec, cont] = await Promise.all([
+    const [st, cfg, prov, rec, cont, lc] = await Promise.all([
       supabase.from('v_stock_insumos').select('*').eq('negocio_id', NEGOCIO_ID).eq('activo', true).order('nombre'),
       supabase.from('configuracion_negocio').select('dias_reposicion_inventario, meta_food_cost').eq('negocio_id', NEGOCIO_ID).single(),
       supabase.from('proveedores').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('v_costo_receta').select('producto_id, nombre, n_insumos, disponible').eq('negocio_id', NEGOCIO_ID).order('orden'),
       supabase.from('conteos_inventario').select('id').eq('negocio_id', NEGOCIO_ID).eq('cerrado', false),
+      supabase.rpc('lista_compras', { p_negocio: NEGOCIO_ID }),   // misma regla que "dinero comprometido"
     ]);
+    setLista((lc.data || []).map((x) => ({ ...x, sugerido: Number(x.sugerido), costo: Number(x.costo) })));
     setStock(st.data || []);
     setConfig(cfg.data);
     setProveedores(prov.data || []);
@@ -72,7 +75,6 @@ export default function InventarioPage() {
   const contados   = stock.filter((i) => i.contado);
   const sinContar  = stock.length - contados.length;
   const dias       = config?.dias_reposicion_inventario ?? 7;
-  const lista      = listaCompras(contados, dias);
   const valorTotal = contados.reduce((s, i) => s + Math.max(Number(i.valor) || 0, 0), 0);
   const bajos      = contados.filter((i) => i.bajo_minimo).length;
 
