@@ -8,6 +8,7 @@ import { Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatHora } from '@/lib/calculos';
 import { diaOperativo, sumarDias } from '@/lib/dia';
+import { CANAL_CORTO } from '@/lib/canales';
 
 const ESTADOS = {
   en_preparacion: { label: 'EN PREP',   color: 'var(--warn-ink)', bg: 'var(--warn-soft)' },
@@ -325,7 +326,7 @@ export default function HomePage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs" style={{ color: 'var(--ink-mute)' }}>{formatHora(pedido.hora)}</span>
                         <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}>
-                          {pedido.canal === 'whatsapp' ? 'WA' : pedido.canal === 'didi' ? 'Didi' : pedido.canal === 'salon' ? 'Salón' : 'Manual'}
+                          {CANAL_CORTO[pedido.canal] || CANAL_CORTO.manual}
                         </span>
                       </div>
                     </div>

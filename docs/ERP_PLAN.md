@@ -3,7 +3,7 @@
 > Fuente de verdad para las Fases 1, 2 y 3. Actualizar al cerrar cada fase.
 > Objetivo: que el dueño sepa **cuánto vendió, cuánto ganó de verdad y cuánto de su dinero ya está comprometido**, desde un Android, con una mano.
 
-Negocio: smash burgers en Tepic, Nayarit. Abre martes a domingo, de 16:00 a 23:00; cierra lunes. Canales: WhatsApp/bot, salón (Soft Restaurant) y Didi Food.
+Negocio: smash burgers en Tepic, Nayarit. Abre martes a domingo, de 16:00 a 23:00; cierra lunes. Canales: WhatsApp/bot, Local (Soft Restaurant) y Didi Food.
 Proyecto Supabase `effxuvviyhaksllmcrqh` · `negocio_id = 34797ee1-37fa-4736-ad56-35578a126b08` (single-tenant).
 
 ---
@@ -104,8 +104,11 @@ Todas tienen `negocio_id` y `GRANT ALL` para anon, authenticated y service_role.
 El sueldo semanal es OPEX (gasto recurrente `sueldo_dueno`). Los retiros adicionales son `retiro_dueno` y **no cuentan como gasto**, son reparto de utilidad.
 
 ### Canales y Didi
-- Canales en Nuevo pedido: **WhatsApp, Salón, Didi**. "Manual" queda sólo en el histórico y el Dashboard lo agrupa con Salón.
-- Forma de pago (Efectivo por default / Transferencia / Tarjeta) para WhatsApp y Salón. Didi siempre va a Didi por cobrar.
+- Canales en Nuevo pedido: **WhatsApp, Local, Didi**. "Manual" queda sólo en el histórico y el Dashboard lo agrupa con Local.
+- **Nombres visibles de canal:** viven en una sola constante, `lib/canales.js` (`CANAL_LABEL = { whatsapp: 'WhatsApp', salon: 'Local', didi: 'Didi', manual: 'Manual' }`). La usan Nuevo pedido, Pedidos, Editar pedido, Precios y costos (incluido el aviso de Soft Restaurant), Dashboard (tarjetas, leyendas, tooltips y márgenes), insights e Historial de cambios.
+  - El valor guardado sigue siendo `'salon'` (columna `precio_salon`, `pedidos.canal`).
+  - Renombrar un canal en la app = editar una línea de esa constante.
+- Forma de pago (Efectivo por default / Transferencia / Tarjeta) para WhatsApp y Local. Didi siempre va a Didi por cobrar.
 
 ---
 
@@ -131,7 +134,7 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 - **/gastos:** pestañas Por pagar, Fijos y Proveedores. Por pagar muestra totales vencido / 7 días / 30 días, chip rojo si está vencida u hoy, amarillo si vence en 7 días o menos, Pagar (cuenta y monto prellenados, acepta abonos) y cancelar las manuales. Fijos tiene CRUD y el estado vacío "Agrega tu primer gasto fijo". Proveedores tiene CRUD con días de crédito en chips. El botón "+ Gasto" (gasto suelto) da a elegir entre "Ya lo pagué" (crea la obligación y la paga en el mismo paso) y "Lo debo".
 - **/configuracion:** saldos de hoy por cuenta y parámetros de `configuracion_negocio`, incluido el sueldo semanal.
 - **/inventario:** (Fase 2, ver la sección 4b).
-- **Nuevo pedido:** canal Salón y chips de forma de pago. **Insumos:** forma de pago (Efectivo / Transfer. / A crédito), proveedor y vencimiento calculado.
+- **Nuevo pedido:** canal Local y chips de forma de pago. **Insumos:** forma de pago (Efectivo / Transfer. / A crédito), proveedor y vencimiento calculado.
 - **Pedidos:** botón Cancelar/Reactivar (el ledger revierte la venta); los cancelados se excluyen de los totales en Pedidos, Finanzas y Dashboard.
 
 ---
@@ -243,7 +246,7 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 | Dom | 47 | 47 |
 
 ### Un solo lugar para los datos
-- **`v_pedidos_base`:** pedidos no cancelados, con día corregido y canal (`manual` → salón), más las importaciones Didi de días sin pedidos Didi capturados (sin doble conteo). Las ventas históricas de WhatsApp y Didi se ven desde el primer día.
+- **`v_pedidos_base`:** pedidos no cancelados, con día corregido y canal (`manual` → `salon`, que la app muestra como Local), más las importaciones Didi de días sin pedidos Didi capturados (sin doble conteo). Las ventas históricas de WhatsApp y Didi se ven desde el primer día.
   - **Didi capturado no trae desglose:** venta bruta = `total_bruto`, o Σ partidas, o `total`. Comisión, promos y retenciones se estiman con las tasas reales en vivo de `importaciones_didi` (`v_didi_tasas`): **comisión 23.6 %, promos 16.7 %, retenciones 4.6 %**.
   - **Desviación del spec:** el spec decía que las promos eran ≈ 24.1 %; los datos dan 16.7 %. Se usa el dato en vivo.
   - **Importaciones:** usan sus montos reales.
@@ -327,7 +330,7 @@ Recibe los agregados de las RPC y devuelve máximo 5 tarjetas, ordenadas por gra
   7. Inventario y efectivo.
 - Cada bloque sin datos muestra "Falta capturar X" con enlace a su pantalla.
 - /finanzas redirige a /dashboard y salió del menú ⋮. `lib/dashboard.js` se eliminó.
-- **Colores de canal:** Salón #3987e5, Didi #d95926, WhatsApp #199e70. Validados con el script de dataviz sobre #141414: ΔE CVD 9.4, contraste ≥ 3:1.
+- **Colores de canal:** Local #3987e5, Didi #d95926, WhatsApp #199e70. Validados con el script de dataviz sobre #141414: ΔE CVD 9.4, contraste ≥ 3:1.
 - Los datos llegan en 4 RPC agregadas en paralelo; el cliente no recibe filas crudas.
 
 ---
@@ -365,8 +368,8 @@ Se agregaron tokens de texto sin cambiar los colores de marca:
 - La banda tiene sus propios semánticos (`--band-good`, `--band-warn`, `--band-bad`, `--band-accent`), iguales en ambos temas.
 
 ### Gráficas
-- **Canales:** WhatsApp #FF4D00, Didi #1C1512 (en oscuro #F7EFE6), Salón #E0A93B.
-- **Validador de dataviz:** la separación para daltonismo pasa (ΔE ≥ 21.8). Advierte que Salón tiene 2.1:1 sobre blanco en claro y que Didi "se lee gris". Se mantuvieron por decisión de marca, con leyenda siempre visible, separación de 2px entre segmentos apilados y valores en el tooltip.
+- **Canales:** WhatsApp #FF4D00, Didi #1C1512 (en oscuro #F7EFE6), Local #E0A93B.
+- **Validador de dataviz:** la separación para daltonismo pasa (ΔE ≥ 21.8). Advierte que Local tiene 2.1:1 sobre blanco en claro y que Didi "se lee gris". Se mantuvieron por decisión de marca, con leyenda siempre visible, separación de 2px entre segmentos apilados y valores en el tooltip.
 - **Heatmap:** `color-mix()` de `--heat-0` (crema) a `--orange`.
 
 ### PWA
@@ -400,7 +403,7 @@ Se agregaron tokens de texto sin cambiar los colores de marca:
 | Canal | Columna | Notas |
 |---|---|---|
 | WhatsApp | `precio_whatsapp` | Nuevo pedido y bot |
-| Salón | `precio_salon` (nuevo) | Antes la app cobraba el precio de WhatsApp. Arranca igual a WhatsApp, y un producto nuevo toma WhatsApp por default. |
+| Local (`salon`) | `precio_salon` (nuevo) | Antes la app cobraba el precio de WhatsApp. Arranca igual a WhatsApp, y un producto nuevo toma WhatsApp por default. |
 | Didi | `precio_didi` | Bruto (lo que paga el cliente) |
 | — | `precio_didi_neto` | `precio_didi × (1 − comisión − promos)`. Para **margen y utilidad**. |
 | — | `precio_didi_cobro` (nuevo) | `precio_didi × (1 − comisión − promos − retenciones)`. Lo que entra a **Didi por cobrar** (Nuevo pedido lo usa como total). |

@@ -8,8 +8,8 @@ import { Sheet, Label, Chips, TextInput, Cargando, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { vibrar, msgError, METODOS_VENTA } from '@/lib/negocio';
+import { CANALES } from '@/lib/canales';
 
-const CANALES = [{ key: 'whatsapp', label: 'WhatsApp' }, { key: 'salon', label: 'Salón' }, { key: 'didi', label: 'Didi' }];
 const precioCanal = (p, canal) => Number(canal === 'didi' ? p.precio_didi ?? p.precio_venta
   : canal === 'salon' ? p.precio_salon ?? p.precio_whatsapp ?? p.precio_venta : p.precio_whatsapp ?? p.precio_venta) || 0;
 

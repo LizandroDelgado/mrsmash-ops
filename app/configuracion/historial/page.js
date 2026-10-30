@@ -5,6 +5,7 @@ import { Header, Chips, Cargando, Vacio, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { NEGOCIO_ID } from '@/lib/negocio';
 import { formatFechaHora } from '@/lib/dia';
+import { CANAL_LABEL, canalLabel } from '@/lib/canales';
 
 const GRUPOS = [
   { key: 'todo',       label: 'Todo',       tablas: null },
@@ -25,7 +26,12 @@ const ACCION = { editar: ['Editado', C.warn, C.warnSoft], anular: ['Anulado', C.
 const OCULTOS = new Set(['id', 'negocio_id', 'created_at', 'updated_at', 'anulado_at']);
 const NOMBRE = ['concepto', 'descripcion', 'nombre', 'cliente_nombre', 'motivo', 'notas'];
 
-const fmt = (v) => (v == null ? '—' : typeof v === 'boolean' ? (v ? 'sí' : 'no') : typeof v === 'object' ? JSON.stringify(v) : String(v));
+const CAMPO = {
+  canal: 'canal', precio_whatsapp: `precio ${CANAL_LABEL.whatsapp}`, precio_salon: `precio ${CANAL_LABEL.salon}`, precio_didi: `precio ${CANAL_LABEL.didi}`,
+};
+const campoLabel = (k) => CAMPO[k] || k.replace(/_/g, ' ');
+
+const fmt = (v, k) => (v == null ? '—' : k === 'canal' ? canalLabel(v) : typeof v === 'boolean' ? (v ? 'sí' : 'no') : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 export default function HistorialCambiosPage() {
   const [grupo,  setGrupo]  = useState('todo');
@@ -63,12 +69,12 @@ export default function HistorialCambiosPage() {
               <p className="text-xs" style={{ color: C.dimmer }}>{formatFechaHora(f.created_at)}</p>
               {campos.map((k) => (
                 <p key={k} className="text-xs break-words" style={{ color: C.dim }}>
-                  {k.replace(/_/g, ' ')}: <span style={{ color: C.ink }}>{fmt(f.antes?.[k])}</span> → <span style={{ color: C.ink, fontWeight: 700 }}>{fmt(f.despues?.[k])}</span>
+                  {campoLabel(k)}: <span style={{ color: C.ink }}>{fmt(f.antes?.[k], k)}</span> → <span style={{ color: C.ink, fontWeight: 700 }}>{fmt(f.despues?.[k], k)}</span>
                 </p>
               ))}
               {f.accion === 'borrar' && base && (
                 <p className="text-xs" style={{ color: C.dim }}>
-                  {['monto', 'total', 'cantidad', 'fecha', 'fecha_vencimiento'].filter((k) => k in base).map((k) => `${k.replace(/_/g, ' ')}: ${fmt(base[k])}`).join(' · ')}
+                  {['monto', 'total', 'cantidad', 'fecha', 'fecha_vencimiento'].filter((k) => k in base).map((k) => `${campoLabel(k)}: ${fmt(base[k], k)}`).join(' · ')}
                 </p>
               )}
             </div>

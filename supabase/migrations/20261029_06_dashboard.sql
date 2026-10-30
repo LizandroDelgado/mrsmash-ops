@@ -61,7 +61,7 @@ SELECT negocio_id,
 FROM importaciones_didi
 GROUP BY negocio_id;
 
--- UN solo lugar para ventas: pedidos (app, WhatsApp, salón, Didi capturado) + importaciones Didi
+-- UN solo lugar para ventas: pedidos (app, WhatsApp, local, Didi capturado) + importaciones Didi
 -- de días sin pedidos Didi capturados (anti doble conteo). Excluye cancelados.
 -- Didi capturado no trae desglose: se estima con las tasas reales sobre la venta bruta.
 -- hora: sólo cuando el pedido se capturó en vivo (mismo día operativo, en horario de servicio).

@@ -12,12 +12,13 @@ import { formatMXN, formatMXN2 } from '@/lib/calculos';
 import { formatDiaCorto, diaOperativo } from '@/lib/dia';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
 import { CATEGORIAS_INSUMO, UNIDAD_GRANDE, costoGrande, copiarTexto } from '@/lib/inventario';
+import { CANAL_LABEL } from '@/lib/canales';
 import {
   CANALES_PRECIO, CATEGORIAS_PRODUCTO, margenCanal, precioSugerido, subirPrecio, precioNeto, costoBaseDesdeCompra,
 } from '@/lib/precios';
 
 const TABS = [{ key: 'productos', label: 'Productos' }, { key: 'insumos', label: 'Insumos' }, { key: 'masivo', label: 'Masivo' }, { key: 'historial', label: 'Historial' }];
-const CAMPOS = { precio_whatsapp: 'WhatsApp', precio_didi: 'Didi', precio_salon: 'Salón', precio_venta: 'Precio lista', costo_insumos: 'Costo', disponible: 'Disponible' };
+const CAMPOS = { precio_whatsapp: CANAL_LABEL.whatsapp, precio_didi: CANAL_LABEL.didi, precio_salon: CANAL_LABEL.salon, precio_venta: 'Precio lista', costo_insumos: 'Costo', disponible: 'Disponible' };
 const SEM = { verde: [C.ok, C.okSoft], ambar: [C.warn, C.warnSoft], rojo: [C.bad, C.badSoft] };
 const UNIDADES_COMPRA = {
   g:   [{ key: 'kg', label: 'kg', factor: 1000 }, { key: 'g', label: 'g', factor: 1 }],

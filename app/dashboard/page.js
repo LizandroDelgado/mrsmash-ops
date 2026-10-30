@@ -16,13 +16,14 @@ import { diaOperativo, sumarDias, diasEntre, formatDiaCorto } from '@/lib/dia';
 import { NEGOCIO_ID, CATEGORIAS_GASTO } from '@/lib/negocio';
 import { generarInsights } from '@/lib/insights';
 import { useTokens } from '@/lib/useTokens';
+import { CANAL_LABEL } from '@/lib/canales';
 
 // Canales: paleta validada (dataviz) sobre la superficie var(--paper), orden fijo
 // Canales: color fijo de marca en todas las gráficas (tokens --ch-*)
 const CANALES = [
-  { key: 'whatsapp', label: 'WhatsApp', tok: 'chWhatsapp' },
-  { key: 'didi',     label: 'Didi',     tok: 'chDidi' },
-  { key: 'salon',    label: 'Salón',    tok: 'chSalon' },
+  { key: 'whatsapp', label: CANAL_LABEL.whatsapp, tok: 'chWhatsapp' },
+  { key: 'didi',     label: CANAL_LABEL.didi,     tok: 'chDidi' },
+  { key: 'salon',    label: CANAL_LABEL.salon,    tok: 'chSalon' },
 ];
 // Semáforo sobre la banda oscura: punto + texto, nunca sólo color
 const SEMAFORO = { verde: C.bandGood, amarillo: C.bandWarn, rojo: C.bandBad };

@@ -9,7 +9,7 @@
 --   3) Todo cambio de precio o costo queda en historial (qué, antes, después, cuándo, motivo).
 -- ============================================================
 
--- ── 1) Catálogo: categoría y precio de salón ─────────────────
+-- ── 1) Catálogo: categoría y precio del local ─────────────────
 -- (supabase/add_categoria_productos.sql, pendiente desde la Fase 1)
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria text DEFAULT 'burger';
 UPDATE productos SET categoria = 'burger'   WHERE (nombre ILIKE '%smash%' OR nombre ILIKE '%bacon%' OR nombre ILIKE '%doble%')
@@ -18,7 +18,7 @@ UPDATE productos SET categoria = 'malteada' WHERE nombre ILIKE '%malteada%';
 UPDATE productos SET categoria = 'papas'    WHERE nombre ILIKE '%papas%';
 UPDATE productos SET categoria = 'bebida'   WHERE nombre ILIKE '%refresco%';
 
--- Salón no tenía precio propio: la app cobraba el de WhatsApp. Arranca igual a WhatsApp.
+-- Local (canal salon) no tenía precio propio: la app cobraba el de WhatsApp. Arranca igual a WhatsApp.
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS precio_salon numeric(10,2);
 UPDATE productos SET precio_salon = COALESCE(precio_whatsapp, precio_venta) WHERE precio_salon IS NULL;
 -- precio_didi_neto  = precio Didi − comisión − promos            → margen y utilidad
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS historial_costos (
 CREATE INDEX IF NOT EXISTS historial_costos_idx ON historial_costos (negocio_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS historial_costos_insumo_idx ON historial_costos (insumo_id, created_at);
 
--- ── 4) Productos: neto Didi, salón por default y costo derivado de la receta ──
+-- ── 4) Productos: neto Didi, local por default y costo derivado de la receta ──
 CREATE OR REPLACE FUNCTION costo_receta_producto(p_producto uuid) RETURNS numeric
 LANGUAGE sql STABLE AS $$
   SELECT round(SUM(r.cantidad * i.costo_promedio), 2)
@@ -301,7 +301,7 @@ WHERE NOT EXISTS (SELECT 1 FROM pedidos x
                   WHERE x.negocio_id = d.negocio_id AND x.canal = 'didi' AND NOT x.cancelado
                     AND COALESCE(x.dia_operativo_corregido, x.fecha) = d.fecha);
 
--- Margen por producto y canal: precio de cada canal (salón con su propio precio) y Didi neto
+-- Margen por producto y canal: precio de cada canal (local con su propio precio) y Didi neto
 -- = precio_didi_neto (comisión + promos de configuración).
 CREATE OR REPLACE FUNCTION margenes_producto(p_negocio uuid, p_desde date, p_hasta date)
 RETURNS TABLE (producto_id uuid, nombre text, burger boolean, tiene_receta boolean, costo numeric,

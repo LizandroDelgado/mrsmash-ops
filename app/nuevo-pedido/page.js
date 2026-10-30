@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { diaOperativo, sumarDias } from '@/lib/dia';
 import { METODOS_VENTA } from '@/lib/negocio';
+import { CANALES } from '@/lib/canales';
 import { Header } from '@/components/ui';
 
 function parsearVoz(texto, productos) {
@@ -72,7 +73,7 @@ function parsearVoz(texto, productos) {
 function getPrecio(producto, canal) {
   if (canal === 'didi')      return producto.precio_didi     || producto.precio_venta;
   if (canal === 'whatsapp')  return producto.precio_whatsapp || producto.precio_venta;
-  return producto.precio_salon || producto.precio_whatsapp || producto.precio_venta;   // salón
+  return producto.precio_salon || producto.precio_whatsapp || producto.precio_venta;   // local
 }
 
 function getPrecioNeto(producto, canal) {
@@ -206,10 +207,10 @@ export default function NuevoPedidoPage() {
         <section>
           <p className="text-xs font-bold tracking-wider mb-2" style={{ color: 'var(--ink-soft)' }}>CANAL</p>
           <div className="flex gap-2">
-            {['whatsapp', 'salon', 'didi'].map((c) => (
+            {CANALES.map(({ key: c, label }) => (
               <button key={c} onClick={() => setCanal(c)} className="flex-1 py-3 rounded-full font-bold text-sm"
                 style={{ background: canal === c ? 'var(--orange-fill)' : 'var(--paper)', color: canal === c ? 'var(--on-orange)' : 'var(--ink-soft)', border: `1px solid ${canal === c ? 'var(--orange-fill)' : 'var(--line)'}` }}>
-                {c === 'whatsapp' ? 'WhatsApp' : c === 'didi' ? 'Didi' : 'Salón'}
+                {label}
               </button>
             ))}
           </div>
