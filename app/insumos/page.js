@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trash2, ChevronLeft, ChevronRight, Package } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
 import { diaOperativo, sumarDias, formatDiaCorto } from '@/lib/dia';
 import { METODOS_COMPRA } from '@/lib/negocio';
+import DesgloseCompra from '@/components/DesgloseCompra';
 
 const CATEGORIAS = ['Carne', 'Pan', 'Verdura', 'Salsas', 'Empaque', 'Otro'];
 
@@ -54,6 +55,8 @@ export default function InsumosPage() {
   const [metodoPago,         setMetodoPago]         = useState('efectivo');
   const [proveedorId,        setProveedorId]        = useState(null);
   const [proveedores,        setProveedores]        = useState([]);
+  const [ultimaCompra,       setUltimaCompra]       = useState(null);
+  const [desglose,           setDesglose]           = useState(null);
 
   // Cargar negocioId una sola vez
   useEffect(() => {
@@ -73,7 +76,7 @@ export default function InsumosPage() {
     const { inicio, fin } = getSemanaRange(offset);
     const { data } = await supabase
       .from('compras_insumos')
-      .select('*')
+      .select('*, compra_items(id)')
       .eq('negocio_id', nid)
       .gte('fecha', inicio)
       .lte('fecha', fin)
@@ -100,7 +103,7 @@ export default function InsumosPage() {
     if (!canSave || !negocioId) return;
     setGuardando(true);
     if (navigator.vibrate) navigator.vibrate(50);
-    const { error } = await supabase.from('compras_insumos').insert({
+    const { data: nueva, error } = await supabase.from('compras_insumos').insert({
       negocio_id:  negocioId,
       descripcion: descripcion.trim(),
       monto:       parseFloat(monto),
@@ -108,8 +111,9 @@ export default function InsumosPage() {
       fecha:       getFecha(),
       metodo_pago: metodoPago,
       proveedor_id: proveedorId,
-    });
+    }).select().single();
     if (!error) {
+      setUltimaCompra(nueva);
       setDescripcion('');
       setMonto('');
       setCategoria('');
@@ -311,6 +315,23 @@ export default function InsumosPage() {
           {guardando ? 'Guardando...' : 'GUARDAR COMPRA'}
         </button>
 
+        {/* ── DESGLOSE OPCIONAL DE LA ÚLTIMA COMPRA ── */}
+        {ultimaCompra && (
+          <div className="rounded-2xl p-3 space-y-2" style={{ background: '#22c55e14', border: '1px solid #22c55e55' }}>
+            <p className="text-sm font-bold" style={{ color: '#22c55e' }}>
+              ✓ Guardada: {ultimaCompra.descripcion} · {formatMXN(ultimaCompra.monto)}
+            </p>
+            <button onClick={() => { setDesglose(ultimaCompra); setUltimaCompra(null); }}
+              className="w-full flex items-center justify-center gap-2 rounded-xl font-bold"
+              style={{ background: '#FF4D00', color: '#fff', minHeight: 52 }}>
+              <Package size={18} /> Agregar insumos de esta compra
+            </button>
+            <p className="text-xs text-center" style={{ color: '#666' }}>
+              Opcional: así entra al inventario y se actualiza el costo de tus recetas
+            </p>
+          </div>
+        )}
+
         {/* ── DIVISOR ── */}
         <div style={{ borderTop: '1px solid #1e1e1e', marginTop: 8 }} />
 
@@ -393,6 +414,17 @@ export default function InsumosPage() {
                           <div className="flex items-center gap-2 ml-3">
                             <span className="font-bold text-white">{formatMXN(c.monto)}</span>
                             <button
+                              onClick={() => setDesglose(c)}
+                              aria-label="Insumos de esta compra"
+                              className="p-2 rounded-lg flex items-center gap-1"
+                              style={{ background: c.compra_items?.length ? '#22c55e22' : '#1e1e1e' }}
+                            >
+                              <Package size={15} style={{ color: c.compra_items?.length ? '#22c55e' : '#555' }} />
+                              {c.compra_items?.length > 0 && (
+                                <span className="text-xs font-bold" style={{ color: '#22c55e' }}>{c.compra_items.length}</span>
+                              )}
+                            </button>
+                            <button
                               onClick={() => { setEditandoFechaInsumo(editandoFechaInsumo === c.id ? null : c.id); setNuevaFechaInsumo(c.fecha); setConfirmEliminar(null); }}
                               className="p-2 rounded-lg"
                               style={{ background: editandoFechaInsumo === c.id ? '#FF4D0022' : '#1e1e1e' }}
@@ -460,6 +492,11 @@ export default function InsumosPage() {
           </div>
         )}
       </main>
+
+      {desglose && (
+        <DesgloseCompra compra={desglose} onClose={() => setDesglose(null)}
+          onCambio={() => cargarCompras(negocioId, semanaOffset)} />
+      )}
 
       <BottomNav />
     </div>

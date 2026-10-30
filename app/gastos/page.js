@@ -33,7 +33,8 @@ function chipVencimiento(fecha, hoy) {
 function describirFrecuencia(g) {
   if (g.frecuencia === 'semanal') return `Cada ${DIAS_SEMANA_ISO.find((d) => d.key === g.dia_pago)?.label || ''}`;
   if (g.frecuencia === 'quincenal') return `Días ${g.dia_pago} y ${Math.min(g.dia_pago + 15, 31)}`;
-  return `${g.frecuencia === 'bimestral' ? 'Cada 2 meses' : 'Cada mes'}, día ${g.dia_pago}`;
+  // Convención: dia_pago = 31 = último día del mes (30 nov, 28/29 feb…)
+  return `${g.frecuencia === 'bimestral' ? 'Cada 2 meses' : 'Cada mes'}, ${g.dia_pago >= 31 ? 'último día' : `día ${g.dia_pago}`}`;
 }
 
 export default function GastosPage() {
@@ -111,7 +112,8 @@ export default function GastosPage() {
     setGuardando(true);
     const fila = {
       concepto: gasto.concepto.trim(), monto: m, categoria: gasto.categoria, frecuencia: gasto.frecuencia,
-      dia_pago: parseInt(gasto.dia_pago, 10) || 1, cuenta_pago_default: gasto.cuenta_pago_default,
+      dia_pago: Math.min(Math.max(parseInt(gasto.dia_pago, 10) || 1, 1), gasto.frecuencia === 'quincenal' ? 15 : 31),
+      cuenta_pago_default: gasto.cuenta_pago_default,
     };
     const { error } = gasto.id
       ? await supabase.from('gastos_recurrentes').update(fila).eq('id', gasto.id)
@@ -352,9 +354,19 @@ export default function GastosPage() {
               <Label>{gasto.frecuencia === 'semanal' ? 'DÍA DE PAGO' : gasto.frecuencia === 'quincenal' ? 'DÍA DEL PRIMER PAGO (el 2º es +15)' : 'DÍA DEL MES'}</Label>
               {gasto.frecuencia === 'semanal' ? (
                 <Chips options={DIAS_SEMANA_ISO} value={gasto.dia_pago} onChange={(v) => setGasto({ ...gasto, dia_pago: v })} />
-              ) : (
+              ) : gasto.frecuencia === 'quincenal' ? (
                 <TextInput value={String(gasto.dia_pago)} inputMode="numeric" type="number"
-                  onChange={(v) => setGasto({ ...gasto, dia_pago: v })} placeholder="1–31" />
+                  onChange={(v) => setGasto({ ...gasto, dia_pago: v })} placeholder="1–15" />
+              ) : (
+                <div className="space-y-2">
+                  <Chips options={[{ key: 'dia', label: 'Un día fijo' }, { key: 'ultimo', label: 'Último día del mes' }]}
+                    value={Number(gasto.dia_pago) >= 31 ? 'ultimo' : 'dia'}
+                    onChange={(k) => setGasto({ ...gasto, dia_pago: k === 'ultimo' ? 31 : 1 })} />
+                  {Number(gasto.dia_pago) < 31 && (
+                    <TextInput value={String(gasto.dia_pago)} inputMode="numeric" type="number"
+                      onChange={(v) => setGasto({ ...gasto, dia_pago: v })} placeholder="1–30" />
+                  )}
+                </div>
               )}
             </div>
             <div>

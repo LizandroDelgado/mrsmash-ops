@@ -56,6 +56,23 @@ export function MontoInput({ value, onChange, autoFocus = false, placeholder = '
   );
 }
 
+// Cantidad con su unidad a la derecha (kg, g, pza…). big = conteo, input enorme.
+export function CantidadInput({ value, onChange, unidad, autoFocus = false, big = false, placeholder = '0', onEnter }) {
+  return (
+    <div className="relative">
+      <input type="number" inputMode="decimal" step="any" value={value} autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        onKeyDown={(e) => { if (e.key === 'Enter' && onEnter) onEnter(); }}
+        className="w-full pl-4 pr-16 rounded-xl text-white placeholder-zinc-600 outline-none font-bold"
+        style={{ background: C.surface, border: `1px solid ${C.border}`, fontSize: big ? 40 : 20,
+                 minHeight: big ? 88 : 52 }} />
+      <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold" style={{ color: C.dim, fontSize: big ? 22 : 16 }}>
+        {unidad}
+      </span>
+    </div>
+  );
+}
+
 export function TextInput({ value, onChange, placeholder, type = 'text', inputMode }) {
   return (
     <input type={type} inputMode={inputMode} value={value} onChange={(e) => onChange(e.target.value)}

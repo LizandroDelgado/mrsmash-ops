@@ -51,6 +51,19 @@ WHERE id IN (SELECT id FROM t_mov)
    OR transferencia_id IN (SELECT transferencia_id FROM movimientos
                            WHERE descripcion LIKE 'TEST%' AND transferencia_id IS NOT NULL);
 
+-- 4b) Inventario de prueba (Fase 2): insumos/productos "TEST%" con todo su kardex,
+--     recetas, desgloses de compra y conteos con notas "TEST%".
+CREATE TEMP TABLE t_ins  ON COMMIT DROP AS SELECT id FROM insumos   WHERE nombre LIKE 'TEST%';
+CREATE TEMP TABLE t_prod ON COMMIT DROP AS SELECT id FROM productos WHERE nombre LIKE 'TEST%';
+CREATE TEMP TABLE t_cont ON COMMIT DROP AS SELECT id FROM conteos_inventario WHERE notas LIKE 'TEST%';
+DELETE FROM compra_items           WHERE insumo_id IN (SELECT id FROM t_ins);
+DELETE FROM conteo_items           WHERE insumo_id IN (SELECT id FROM t_ins) OR conteo_id IN (SELECT id FROM t_cont);
+DELETE FROM conteos_inventario     WHERE id IN (SELECT id FROM t_cont);
+DELETE FROM inventario_movimientos WHERE insumo_id IN (SELECT id FROM t_ins);
+DELETE FROM recetas                WHERE insumo_id IN (SELECT id FROM t_ins) OR producto_id IN (SELECT id FROM t_prod);
+DELETE FROM insumos                WHERE id IN (SELECT id FROM t_ins);
+DELETE FROM productos              WHERE id IN (SELECT id FROM t_prod);
+
 -- 5) Catálogos de prueba
 DELETE FROM obligaciones       WHERE id IN (SELECT id FROM t_obl);
 DELETE FROM gastos_recurrentes WHERE id IN (SELECT id FROM t_gr);

@@ -2,11 +2,12 @@
 // Menú "Más" del encabezado: pantallas que salieron de la barra inferior.
 import { useState } from 'react';
 import Link from 'next/link';
-import { MoreVertical, ShoppingBag, BarChart2, ClipboardList, Settings } from 'lucide-react';
+import { MoreVertical, ShoppingBag, BookOpen, BarChart2, ClipboardList, Settings } from 'lucide-react';
 import { Sheet, C } from '@/components/ui';
 
 const ITEMS = [
   { href: '/insumos',       icon: ShoppingBag,   label: 'Compras de insumos' },
+  { href: '/inventario/recetas', icon: BookOpen, label: 'Recetas y costos' },
   { href: '/finanzas',      icon: BarChart2,     label: 'Finanzas (semana / mes)' },
   { href: '/importar',      icon: ClipboardList, label: 'Importar Didi' },
   { href: '/configuracion', icon: Settings,      label: 'Configuración y saldos' },

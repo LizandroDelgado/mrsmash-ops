@@ -113,9 +113,12 @@ El sueldo semanal es OPEX (gasto recurrente `sueldo_dueno`). Los retiros adicion
 |---|---|
 | `20261029_01_ledger_base.sql` | `dia_operativo`, `ts_de_dia`, tablas nuevas, columnas aditivas, semillas y grants |
 | `20261029_02_ledger_triggers.sql` | Triggers, RPCs, vista de saldos y sueldo del dueño |
-| `limpiar_test.sql` | Borra todo lo marcado como `TEST%`, incluidos los movimientos generados |
+| `20261029_03_inventario.sql` | Fase 2: insumos, recetas, kardex, conteos, desglose de compras, triggers, vistas y RPC de inventario y food cost |
+| `20261029_04_fase21.sql` | Fase 2.1: categoría `prestamo`, convención de fin de mes, `gramos_por_porcion`, `costo_origen`, notas de receta |
+| `20261029_05_semilla_real.sql` | Fase 2.1: datos reales del dueño (21 insumos, recetas de 11 productos, 8 gastos fijos). Idempotente |
+| `limpiar_test.sql` | Borra todo lo marcado como `TEST%`, incluidos los movimientos generados y el inventario de prueba |
 
-Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE`. Sin DROP.
+Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE`. Sin DROP de tablas, columnas ni datos. **Única excepción (04):** el CHECK de `gastos_recurrentes.categoria` se quita y se vuelve a poner más amplio (con `prestamo`), porque Postgres no permite editar un CHECK.
 
 ---
 
@@ -124,9 +127,95 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 - **/caja:** tarjeta "Dinero libre" (placeholder hasta la Fase 3) con el total líquido; saldos por cuenta (al tocar uno se filtran los movimientos); botones Retiro mío, Meter dinero, Pasar entre cuentas y Cobró Didi; **Corte de caja** con el esperado y la diferencia en vivo (verde, amarillo o rojo); últimos 100 movimientos. Si no hay saldos, muestra el estado vacío "Captura tus saldos de hoy".
 - **/gastos:** pestañas Por pagar, Fijos y Proveedores. Por pagar muestra totales vencido / 7 días / 30 días, chip rojo si está vencida u hoy, amarillo si vence en 7 días o menos, Pagar (cuenta y monto prellenados, acepta abonos) y cancelar las manuales. Fijos tiene CRUD y el estado vacío "Agrega tu primer gasto fijo". Proveedores tiene CRUD con días de crédito en chips. El botón "+ Gasto" (gasto suelto) da a elegir entre "Ya lo pagué" (crea la obligación y la paga en el mismo paso) y "Lo debo".
 - **/configuracion:** saldos de hoy por cuenta y parámetros de `configuracion_negocio`, incluido el sueldo semanal.
-- **/inventario:** placeholder de la Fase 2 con acceso a compras.
+- **/inventario:** (Fase 2, ver la sección 4b).
 - **Nuevo pedido:** canal Salón y chips de forma de pago. **Insumos:** forma de pago (Efectivo / Transfer. / A crédito), proveedor y vencimiento calculado.
 - **Pedidos:** botón Cancelar/Reactivar (el ledger revierte la venta); los cancelados se excluyen de los totales en Pedidos, Finanzas y Dashboard.
+
+---
+
+## 4b. Fase 2: inventario valorizado y recetas
+
+### Diseño
+- **El stock no se guarda:** `stock = SUM(inventario_movimientos.cantidad)`, en `unidad_base` (g, ml, pza). En pantalla, kg/L cuando pasa de 1000.
+- **Kardex** `inventario_movimientos`: tipos `inicial`, `compra`, `consumo_venta`, `merma`, `ajuste_conteo`. `dia_operativo` lo llena el trigger. Nunca se borran: se revierten con filas inversas **con la misma fecha del original** (cancelar hoy una venta de ayer corrige el consumo de ayer).
+- **Costo promedio ponderado** (`insumos.costo_promedio`): sólo lo mueven las entradas con costo propio (`compra`, `inicial`). Fórmula: `(stock × cp + q × costo) / (stock + q)`; si el stock era ≤ 0, el costo nuevo es el de la compra. El reverso de una compra saca su aportación. Consumos, mermas y ajustes salen o entran al promedio vigente.
+- **Desviación del spec:** 6 decimales (`numeric(14,6)`) en lugar de 4 en `costo_promedio`, `costo_unitario` y `factor_conversion`, porque la papa cuesta $0.07875/g y con 4 decimales se redondeaba.
+- Todas las tablas nuevas llevan `negocio_id`, incluidas `compra_items` y `conteo_items` (si no viene, `compra_items` lo toma de la compra).
+
+### Triggers
+| Evento | Efecto |
+|---|---|
+| INSERT/UPDATE/DELETE `compra_items` | Entrada `compra` de `cantidad × factor_conversion` a `costo_total / cantidad_base`; recalcula el promedio. Editar o borrar revierte. Borrar la compra borra el desglose en cascada y revierte. |
+| UPDATE `compras_insumos.fecha` | Re-fecha las entradas del desglose. |
+| INSERT `pedido_items` (pedido del ledger, no cancelado; cualquier canal) | Por cada línea de receta: `consumo_venta = −cantidad receta × cantidad vendida`, al promedio vigente. Productos sin receta no consumen y no truenan. |
+| UPDATE `pedido_items` (cantidad/producto), DELETE | Revierte y vuelve a consumir. |
+| UPDATE `pedidos.cancelado` / `fecha` | Revierte todas las partidas y, si sigue vigente, vuelve a consumir. |
+| Primera compra real de un insumo (04) | `costo_origen` pasa a `'compras'`. |
+- El histórico (`en_ledger = false`) no consume inventario.
+- Las compras sin desglose siguen siendo gasto de insumos en finanzas, pero no mueven inventario.
+
+### Conteos y arranque
+- `conteos_inventario` (un solo conteo abierto a la vez) + `conteo_items` (UNIQUE `conteo_id, insumo_id`). Es un conteo a ciegas: la teórica no se muestra mientras se cuenta.
+- `cerrar_conteo`: teórica = stock en `conteos_inventario.fecha` (inicio del conteo), diferencia = física − teórica, ajuste `ajuste_conteo` por la diferencia, `valor_diferencia = diferencia × costo_promedio` (merma o sobrante). Guarda `valor_inventario` para el food cost real.
+- **Arranque (decisión de la Fase 2.1):** si un insumo nunca ha tenido `inicial` ni `ajuste_conteo`, su primer conteo registra la diferencia como `inicial` ("Arranque: primer conteo"): fija el stock y **no cuenta como merma**. Así las ventas anteriores al primer conteo (stock teórico negativo) no aparecen como un sobrante gigante. Desde el segundo conteo, las diferencias son merma.
+- `v_stock_insumos.contado` indica si el insumo ya tiene punto de partida. Los no contados se muestran "sin contar" y no entran al valor ni a la lista de compras.
+- `carga_inicial(negocio, items, notas)`: alta en lote + movimientos `inicial` + un registro `conteos_inventario` de tipo `inicial` (ancla para el food cost real), todo en una transacción.
+- Merma directa: INSERT en `inventario_movimientos` con `tipo='merma'`, cantidad negativa y `motivo`.
+
+### Vistas y funciones
+- `v_stock_insumos`: stock, valor (stock × costo_promedio), consumo diario (consumo neto de los últimos 14 días entre los días que abre, martes a domingo, desde el primer consumo), días de cobertura, `bajo_minimo`, `gramos_por_porcion`, `costo_origen`, `contado`.
+- `v_costo_receta`: costo actual por producto = Σ(cantidad receta × costo_promedio), contra `productos.costo_insumos`; `diferencia` es null si el producto no tiene receta.
+- `food_cost(negocio, desde, hasta)`:
+  - **Venta neta** = movimientos `venta` del ledger en el periodo.
+  - **Teórico** = consumo por receta valorizado + **respaldo** para lo vendido sin receta (`pedido_items.costo`, que viene de `productos.costo_insumos`) / venta neta.
+  - **Real** = (inventario inicial + compras − inventario final) / venta neta, si hay conteo o carga inicial cerrados el día `desde` o el anterior, y conteo el día `hasta` o el siguiente. Compras = entradas del kardex entre ambos conteos + compras sin desglose del periodo. Si no hay anclas: teórico + mermas y ajustes, marcado `estimado`.
+- `resumen_conteo`, `cerrar_conteo`, `carga_inicial`, `stock_insumo`, `valor_inventario`, `insumo_tiene_base`.
+
+### Pantallas
+- **/inventario:**
+  - Valor del inventario, número de insumos bajo mínimo y botón "Contar inventario" (o "Continuar conteo").
+  - Accesos a Merma, Recetas y Alta de insumos.
+  - Alerta "Productos sin receta".
+  - Food cost teórico vs real de la semana o el mes, contra la meta.
+  - Lista de compras: bajo mínimo o cobertura menor a `dias_reposicion_inventario`; cantidad = máx(consumo × días, mínimo) − stock, redondeada a 100 g/ml o a piezas enteras; costo estimado. Se copia como texto o se abre en WhatsApp, agrupada por proveedor y sin costos.
+  - Existencias por categoría. Al tocar un insumo se edita su mínimo, categoría, proveedor o baja, y se registra merma.
+  - Sin insumos, muestra el estado guía "1. Da de alta tus insumos → 2. Arma tus recetas → 3. Haz tu primer conteo".
+- **/inventario/conteo:**
+  - Un insumo por pantalla, con input grande y "Siguiente", "Anterior" y "No lo conté". Se puede retomar un conteo abierto.
+  - Al final, un resumen valorizado; los insumos de primer conteo aparecen como "Arranque".
+  - Desde ahí se cierra o se descarta el conteo.
+- **/inventario/recetas:**
+  - Lista de productos con su costo de receta y margen. Si el costo de receta difiere del registrado, un botón sincroniza `costo_insumos` (nunca automático).
+  - Detalle de cada producto:
+    - Líneas con cantidad editable y costo en vivo.
+    - Margen en $ y %, y una nota por línea (por ejemplo "Por confirmar").
+    - Buscador con los insumos más usados como chips, y alta de insumo en línea sin salir.
+- **/inventario/carga:** alta en lote (nombre, unidad, categoría, stock de hoy, costo por kg/L/pza, mínimo) con una sola RPC.
+- **Compras de insumos:** después de guardar, "Agregar insumos de esta compra" (opcional). Cada compra tiene su botón 📦 con el número de partidas. Hoja de desglose:
+  - Chips con los últimos insumos comprados y buscador con alta en línea.
+  - Unidad de compra: kg/g, L/ml, piezas o caja (piezas por caja).
+  - Insumos en porción también se compran por kg o L: la pantalla pide los gramos por porción una vez, los guarda en `insumos.gramos_por_porcion` y usa `factor_conversion = 1000 / gramos_por_porcion`.
+- Menú ⋮: + "Recetas y costos".
+
+### Fase 2.1
+- **Préstamos:** categoría `prestamo` en `gastos_recurrentes`, con la etiqueta "Pago de préstamo" en /gastos. `obligaciones.categoria` no tiene CHECK, así que acepta `prestamo` sin cambios. Regla para la Fase 3 en la sección 6.
+- **Fin de mes:** convención `dia_pago = 31` = último día del mes. `generar_obligaciones` ya recortaba al último día real; /gastos ofrece "Último día del mes". Quincenal acepta días 1–15.
+- **Semilla real (05):**
+  - 21 insumos con `costo_origen='excel'` y sin stock (arranca con el primer conteo).
+  - Recetas de los 11 productos. "Papas Sencillas" se asignó a "Papas a la francesa", confirmado por el dueño. El tocino de Papas Smash va marcado "Por confirmar".
+  - 8 gastos fijos mensuales que vencen el último día del mes y se pagan del Banco.
+  - `costo_insumos` **no** se sincronizó.
+
+| Producto | Costo receta | Cifra del dueño | `costo_insumos` (sin tocar) |
+|---|---|---|---|
+| Smash Sencilla / Promo | 52.58 | 52.58 | 49 |
+| Bacon Smash | 60.58 | 60.58 | 61 |
+| Doble Smash | 71.43 | 71.43 | 70 |
+| Doble Bacon Smash | 79.43 | 79.43 | 75 |
+| Malteadas (×3) | 24.60 | 24.60 | 20 |
+| Papas a la francesa | 10.33 | 10.33 | 12 |
+| Papas Smash | 21.83 | 21.83 | 20 |
+| Refresco | 20.00 | 20.00 | 8 |
 
 ---
 
@@ -158,6 +247,35 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 
 ---
 
+## 5b. Bitácora de cierre de Fases 2 y 2.1 (2026-10-29)
+
+**Respaldo previo:** `pg_dump --schema=public` en `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261029_1815.sql` (268,575 bytes). Conteos: 301 pedidos, 565 items, 59 compras, 507 Didi, 11 productos, 0 movimientos.
+
+**Aplicación:** 03 y 04 con `psql --single-transaction -v ON_ERROR_STOP=1`, exit 0; RLS desactivado en las 6 tablas nuevas. Después corrieron las pruebas TEST y `limpiar_test.sql`, y al final la 05 (semilla real), también en una sola transacción. La semilla va al final para que las recetas TEST del Doble Smash no tocaran insumos reales.
+
+**Pruebas locales (PGlite, réplica del esquema; migraciones aplicadas dos veces):**
+- Inventario: 48/48.
+- Semilla, fin de mes y préstamos: 26/26. Incluye 31 oct, 30 nov, 31 dic, 28 feb 2027, 29 feb 2028, 30 abr y 30 jun; el CHECK sigue rechazando categorías inválidas; el arranque por primer conteo; y la mayonesa comprada por kg a 15 g/porción.
+- Regresión de la Fase 1: 53/53.
+
+**Pruebas en producción (API con la key de la app, datos TEST):**
+| Criterio | Resultado |
+|---|---|
+| Carga inicial en lote de 4 insumos → $405 | PASS |
+| Compro 5 kg de carne a $900 → +5000 g, $0.18/g, origen `compras`; otros 5 kg a $1000 → 10000 g, promedio $0.19/g | PASS |
+| Vendo 1 Doble Smash → carne −180, pan −1, queso −2, caja −1; cancelo → vuelve; reactivo → consume; borro → vuelve | PASS |
+| Conteo: pan 18 contra teórico 20 → `ajuste_conteo` −2 y merma −$16; carne sin base → arranque, sin merma | PASS |
+| Merma directa | PASS |
+| Lista de compras: sólo el pan bajo mínimo, 30 − 16 = 14 pza ≈ $112; texto "• TEST Pan brioche: 14 pza" | PASS |
+| Sincronizar `costo_insumos` con la receta (producto TEST) | PASS |
+| `limpiar_test.sql` → inventario y ledger en 0, cuentas en $0, histórico intacto, Doble Smash sigue en $70 | PASS |
+| Semilla: 21 insumos `excel`, sin stock; `v_costo_receta` = las 11 cifras del dueño; 8 gastos día 31 Banco | PASS |
+| `generar_obligaciones` a 90 días: 24 y luego 0, sin duplicados (31 oct, 30 nov, 31 dic; $28,800/mes, de ellos $7,800 de préstamos) | PASS |
+
+**360 px:** sin scroll horizontal y sin botones de menos de 44 px en /inventario, recetas (lista y detalle), carga, conteo, la hoja de merma, Compras, Gastos (hoja de gasto fijo con "Último día del mes"), Caja y Pedidos. Los costos unitarios y de receta se muestran con centavos (`formatMXN2`).
+
+---
+
 ## 6. Pendiente
 
 **Fase 1b pendiente: importador de Soft Restaurant, requiere export real.**
@@ -169,13 +287,19 @@ Todas son aditivas: `CREATE … IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CRE
 - Excluir tickets de domicilio/WhatsApp para no contar doble, y recordar esa elección.
 - Guardar en `pedidos` y `pedido_items` con `fuente_import='soft'` y `folio_externo`. Ya existen la tabla de mapeo, las columnas y el índice único.
 
-### Fase 2: inventario y costo real
-- Inventario por insumo, recetas (BOM) por producto, food cost real contra la meta y reposición a `dias_reposicion_inventario`.
+### Siguientes pasos de inventario (operación, no código)
+- Hacer el primer conteo físico: arranca el stock.
+- Confirmar el tocino de Papas Smash.
+- Decidir si se sincroniza `costo_insumos` con las recetas desde /inventario/recetas.
+- Si ya se pagaron los gastos fijos de octubre, cancelar las obligaciones del 31 oct en Por pagar.
+
+### Pendientes técnicos heredados de la Fase 2
 - Didi: corregir la UNIQUE pérdida de `importaciones_didi` (usar el id de pedido si el reporte lo trae) y conciliar por pedido en vez de por día.
 - Pasar Finanzas y Dashboard a leer del ledger y usar `dia_operativo` para agrupar.
 - Crear `productos.categoria` (el SQL existe en `supabase/add_categoria_productos.sql`, pero no se aplicó).
 
 ### Fase 3: dinero libre y cashflow
+**Regla de préstamos (Fase 2.1):** la categoría `prestamo` **NO** entra en OPEX, utilidad operativa ni punto de equilibrio operativo; **SÍ** entra en dinero comprometido (obligaciones que vencen) y en el cashflow proyectado.
 - **Dinero libre** = líquido (Caja + Banco + Terminal) − obligaciones que vencen antes del próximo ingreso fuerte − reserva de impuestos (`tasa_reserva_impuestos` × ventas desde el último pago de impuestos) − reposición de inventario.
 - Proyección de cashflow a 90 días: ventas promedio por día de la semana (operando de martes a domingo) + cobros Didi en `dia_pago_didi` − `generar_obligaciones(negocio, hoy+90)`.
 - Utilidad real: ventas netas − insumos − OPEX (incluye el sueldo del dueño); los retiros quedan fuera.
