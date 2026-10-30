@@ -12,7 +12,8 @@
 -- ── 1) Catálogo: categoría y precio de salón ─────────────────
 -- (supabase/add_categoria_productos.sql, pendiente desde la Fase 1)
 ALTER TABLE productos ADD COLUMN IF NOT EXISTS categoria text DEFAULT 'burger';
-UPDATE productos SET categoria = 'burger'   WHERE nombre ILIKE '%smash%' OR nombre ILIKE '%bacon%' OR nombre ILIKE '%doble%';
+UPDATE productos SET categoria = 'burger'   WHERE (nombre ILIKE '%smash%' OR nombre ILIKE '%bacon%' OR nombre ILIKE '%doble%')
+  AND nombre NOT ILIKE '%papas%' AND nombre NOT ILIKE '%malteada%' AND categoria IS DISTINCT FROM 'burger';
 UPDATE productos SET categoria = 'malteada' WHERE nombre ILIKE '%malteada%';
 UPDATE productos SET categoria = 'papas'    WHERE nombre ILIKE '%papas%';
 UPDATE productos SET categoria = 'bebida'   WHERE nombre ILIKE '%refresco%';

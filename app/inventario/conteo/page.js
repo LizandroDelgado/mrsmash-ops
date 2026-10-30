@@ -12,6 +12,7 @@ import { formatMXN, formatMXN2 } from '@/lib/calculos';
 import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
 import { CATEGORIAS_INSUMO, NOMBRE_CATEGORIA, UNIDAD_GRANDE, fmtCantidad, aGrande, deGrande } from '@/lib/inventario';
 import { formatFechaHora } from '@/lib/dia';
+import ConteoCerradoSheet from '@/components/ConteoCerradoSheet';
 
 const ORDEN_CAT = Object.fromEntries(CATEGORIAS_INSUMO.map((c, i) => [c.key, i]));
 
@@ -27,6 +28,9 @@ export default function ConteoPage() {
   const [cerrado,   setCerrado]   = useState(null);
   const [ocupado,   setOcupado]   = useState(false);
   const inputRef = useRef(null);
+  const [anteriores, setAnteriores] = useState([]);   // conteos cerrados (editables / eliminables)
+  const [antSel,     setAntSel]     = useState(null);
+  const [aviso,      setAviso]      = useState(null);
 
   const cargar = useCallback(async () => {
     const [{ data: ins }, { data: abiertos }] = await Promise.all([
@@ -34,6 +38,10 @@ export default function ConteoPage() {
         .eq('negocio_id', NEGOCIO_ID).eq('activo', true),
       supabase.from('conteos_inventario').select('*').eq('negocio_id', NEGOCIO_ID).eq('cerrado', false).limit(1),
     ]);
+    const { data: ant } = await supabase.from('conteos_inventario').select('*')
+      .eq('negocio_id', NEGOCIO_ID).eq('cerrado', true).eq('anulado', false).eq('tipo', 'conteo')
+      .order('fecha', { ascending: false }).limit(10);
+    setAnteriores(ant || []);
     const ordenados = (ins || []).sort((a, b) =>
       (ORDEN_CAT[a.categoria] - ORDEN_CAT[b.categoria]) || a.nombre.localeCompare(b.nombre));
     setInsumos(ordenados);
@@ -159,6 +167,24 @@ export default function ConteoPage() {
           <p className="text-xs" style={{ color: C.dimmer }}>Mejor antes de abrir o después de cerrar, sin ventas en curso.</p>
         </div>
         <BotonPrincipal onClick={empezar} disabled={ocupado}>Empezar conteo</BotonPrincipal>
+        {aviso && <p className="text-sm font-bold text-center" style={{ color: C.ok }}>{aviso}</p>}
+        {anteriores.length > 0 && (
+          <div className="space-y-2">
+            <Label>CONTEOS ANTERIORES</Label>
+            {anteriores.map((c) => (
+              <button key={c.id} type="button" onClick={() => setAntSel(c)}
+                className="w-full flex items-center justify-between px-4 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 56 }}>
+                <span className="text-sm text-ink">{formatFechaHora(c.fecha)}</span>
+                <span className="text-sm font-bold" style={{ color: Number(c.valor_diferencia) < 0 ? C.bad : Number(c.valor_diferencia) > 0 ? C.ok : C.dim }}>
+                  {formatMXN(Number(c.valor_diferencia || 0))}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {antSel && (
+          <ConteoCerradoSheet conteo={antSel} onClose={() => { setAntSel(null); cargar(); }} onCambio={(m) => setAviso(m)} />
+        )}
       </>
     ));
   }

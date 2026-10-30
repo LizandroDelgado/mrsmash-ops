@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Trash2, ChevronLeft, ChevronRight, Package } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Package, Pencil } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
@@ -8,6 +8,7 @@ import { formatMXN } from '@/lib/calculos';
 import { diaOperativo, sumarDias, formatDiaCorto } from '@/lib/dia';
 import { METODOS_COMPRA } from '@/lib/negocio';
 import DesgloseCompra from '@/components/DesgloseCompra';
+import EditarCompra from '@/components/EditarCompra';
 import MasMenu from '@/components/MasMenu';
 
 const CATEGORIAS = ['Carne', 'Pan', 'Verdura', 'Salsas', 'Empaque', 'Otro'];
@@ -49,9 +50,8 @@ export default function InsumosPage() {
   const [guardando,          setGuardando]          = useState(false);
   const [compras,            setCompras]            = useState([]);
   const [negocioId,          setNegocioId]          = useState(null);
-  const [confirmEliminar,    setConfirmEliminar]    = useState(null);
-  const [editandoFechaInsumo, setEditandoFechaInsumo] = useState(null);
-  const [nuevaFechaInsumo,    setNuevaFechaInsumo]    = useState('');
+  const [editando,           setEditando]           = useState(null);   // compra abierta en la hoja de edición
+  const [avisoCompra,        setAvisoCompra]        = useState(null);
   const [semanaOffset,       setSemanaOffset]       = useState(0);
   const [loadingCompras,     setLoadingCompras]     = useState(false);
   const [metodoPago,         setMetodoPago]         = useState('efectivo');
@@ -80,6 +80,7 @@ export default function InsumosPage() {
       .from('compras_insumos')
       .select('*, compra_items(id)')
       .eq('negocio_id', nid)
+      .eq('anulado', false)
       .gte('fecha', inicio)
       .lte('fecha', fin)
       .order('fecha',      { ascending: false })
@@ -125,21 +126,6 @@ export default function InsumosPage() {
       alert('Error al guardar: ' + error.message);
     }
     setGuardando(false);
-  };
-
-  const cambiarFechaInsumo = async (id, fecha) => {
-    const { error } = await supabase.from('compras_insumos').update({ fecha }).eq('id', id);
-    if (error) { alert('Error al cambiar fecha: ' + error.message); return; }
-    setEditandoFechaInsumo(null);
-    cargarCompras(negocioId, semanaOffset);
-  };
-
-  const eliminarCompra = async (id) => {
-    const { error } = await supabase.from('compras_insumos').delete().eq('id', id);
-    if (error) { alert('Error al eliminar: ' + error.message); return; }
-    setCompras((prev) => prev.filter((c) => c.id !== id));
-    setConfirmEliminar(null);
-    if (navigator.vibrate) navigator.vibrate(100);
   };
 
   // Agrupar compras por día
@@ -308,6 +294,11 @@ export default function InsumosPage() {
           {guardando ? 'Guardando...' : 'GUARDAR COMPRA'}
         </button>
 
+        {avisoCompra && (
+          <button type="button" onClick={() => setAvisoCompra(null)} className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold"
+            style={{ background: 'var(--good-soft)', color: 'var(--good-ink)', border: '1px solid var(--line)' }}>{avisoCompra}</button>
+        )}
+
         {/* ── DESGLOSE OPCIONAL DE LA ÚLTIMA COMPRA ── */}
         {ultimaCompra && (
           <div className="rounded-2xl p-3 space-y-2" style={{ background: 'var(--good-soft)', border: '1px solid var(--good-line)' }}>
@@ -418,64 +409,15 @@ export default function InsumosPage() {
                               )}
                             </button>
                             <button
-                              onClick={() => { setEditandoFechaInsumo(editandoFechaInsumo === c.id ? null : c.id); setNuevaFechaInsumo(c.fecha); setConfirmEliminar(null); }}
-                              className="p-2 rounded-full"
-                              style={{ background: editandoFechaInsumo === c.id ? 'var(--orange-soft)' : 'var(--paper-2)' }}
+                              onClick={() => setEditando(c)}
+                              aria-label="Editar compra"
+                              className="flex items-center justify-center rounded-full"
+                              style={{ width: 44, height: 44, minHeight: 44, background: 'var(--paper)', border: '1px solid var(--line)' }}
                             >
-                              <span style={{ fontSize: 13, color: editandoFechaInsumo === c.id ? 'var(--orange-text)' : 'var(--ink-mute)' }}>✏️</span>
-                            </button>
-                            <button
-                              onClick={() => { setConfirmEliminar(confirmEliminar === c.id ? null : c.id); setEditandoFechaInsumo(null); }}
-                              className="p-2 rounded-full"
-                              style={{ background: confirmEliminar === c.id ? 'var(--bad-soft)' : 'var(--paper-2)' }}
-                            >
-                              <Trash2 size={15} style={{ color: confirmEliminar === c.id ? 'var(--bad-ink)' : 'var(--ink-mute)' }} />
+                              <Pencil size={15} style={{ color: 'var(--ink-soft)' }} />
                             </button>
                           </div>
                         </div>
-                        {editandoFechaInsumo === c.id && (
-                          <div className="flex gap-2 px-4 pb-3">
-                            <input
-                              type="date"
-                              value={nuevaFechaInsumo}
-                              max={hoyStr}
-                              onChange={(e) => setNuevaFechaInsumo(e.target.value)}
-                              className="flex-1 px-3 py-2 rounded-xl text-ink outline-none text-sm"
-                              style={{ background: 'var(--paper-2)', border: '1px solid var(--orange)' }}
-                            />
-                            <button
-                              onClick={() => nuevaFechaInsumo && cambiarFechaInsumo(c.id, nuevaFechaInsumo)}
-                              disabled={!nuevaFechaInsumo}
-                              className="px-4 py-2 rounded-full font-bold text-sm"
-                              style={{ background: nuevaFechaInsumo ? 'var(--orange-fill)' : 'var(--line)', color: nuevaFechaInsumo ? 'var(--on-orange)' : 'var(--ink-mute)' }}>
-                              Guardar
-                            </button>
-                            <button
-                              onClick={() => setEditandoFechaInsumo(null)}
-                              className="px-3 py-2 rounded-full text-sm"
-                              style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}>
-                              Cancelar
-                            </button>
-                          </div>
-                        )}
-                        {confirmEliminar === c.id && (
-                          <div className="flex gap-2 px-4 pb-3">
-                            <button
-                              onClick={() => setConfirmEliminar(null)}
-                              className="flex-1 py-2 rounded-full text-sm font-bold"
-                              style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              onClick={() => eliminarCompra(c.id)}
-                              className="flex-1 py-2 rounded-full text-sm font-bold"
-                              style={{ background: 'var(--bad-soft)', color: 'var(--bad-ink)' }}
-                            >
-                              Confirmar borrar
-                            </button>
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -485,6 +427,13 @@ export default function InsumosPage() {
           </div>
         )}
       </main>
+
+      {editando && (
+        <EditarCompra compra={editando} proveedores={proveedores}
+          onClose={() => setEditando(null)}
+          onDesglose={() => { setDesglose(editando); setEditando(null); }}
+          onGuardado={(msg) => { setEditando(null); setAvisoCompra(msg); cargarCompras(negocioId, semanaOffset); }} />
+      )}
 
       {desglose && (
         <DesgloseCompra compra={desglose} onClose={() => setDesglose(null)}

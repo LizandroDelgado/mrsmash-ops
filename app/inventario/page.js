@@ -5,6 +5,7 @@ import { ClipboardCheck, BookOpen, PackagePlus, Flame, Copy, Send, ShoppingBag, 
 import BottomNav from '@/components/BottomNav';
 import MasMenu from '@/components/MasMenu';
 import BuscadorInsumos from '@/components/BuscadorInsumos';
+import AccionesEdicion from '@/components/AccionesEdicion';
 import { Header, Label, Chips, Sheet, Cargando, BotonPrincipal, CantidadInput, TextInput, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatMXN2 } from '@/lib/calculos';
@@ -325,6 +326,37 @@ function DetalleInsumo({ insumo, proveedores, onClose, onMerma, onGuardado }) {
   const [categoria, setCategoria] = useState(insumo.categoria);
   const [proveedor, setProveedor] = useState(insumo.proveedor_id);
   const [guardando, setGuardando] = useState(false);
+  const [mermas,    setMermas]    = useState([]);
+  const [mermaSel,  setMermaSel]  = useState(null);   // { id, cantidad, motivo, fecha }
+
+  // Mermas directas recientes de este insumo (editables / eliminables)
+  const cargarMermas = useCallback(async () => {
+    const { data } = await supabase.from('inventario_movimientos').select('id, cantidad, motivo, fecha, dia_operativo, costo_unitario')
+      .eq('insumo_id', insumo.insumo_id).eq('tipo', 'merma').eq('anulado', false).is('ref_tabla', null)
+      .order('fecha', { ascending: false }).limit(10);
+    setMermas(data || []);
+  }, [insumo.insumo_id]);
+  useEffect(() => { cargarMermas(); }, [cargarMermas]);
+
+  const rpcMerma = async (fn) => {
+    setGuardando(true);
+    const { error } = await fn();
+    setGuardando(false);
+    if (error) { alert(msgError(error)); return; }
+    vibrar();
+    setMermaSel(null);
+    cargarMermas();
+  };
+
+  const eliminar = async () => {
+    setGuardando(true);
+    const { data, error } = await supabase.rpc('borrar_o_desactivar', { p_tabla: 'insumos', p_id: insumo.insumo_id });
+    setGuardando(false);
+    if (error) { alert(msgError(error)); return; }
+    vibrar();
+    if (data?.resultado === 'desactivado') alert(`"${insumo.nombre}" se desactivó en lugar de borrarse: ${data.motivo}.`);
+    onGuardado();
+  };
 
   const guardar = async (extra = {}) => {
     setGuardando(true);
@@ -371,11 +403,30 @@ function DetalleInsumo({ insumo, proveedores, onClose, onMerma, onGuardado }) {
             value={proveedor} onChange={setProveedor} wrap />
         </div>
       )}
-      <BotonPrincipal onClick={() => guardar()} disabled={guardando}>Guardar</BotonPrincipal>
-      <button type="button" onClick={() => { if (confirm(`¿Dar de baja "${insumo.nombre}"? Deja de aparecer en listas y conteos.`)) guardar({ activo: false }); }}
-        className="w-full rounded-xl text-sm font-bold" style={{ background: C.surface2, color: C.dim, minHeight: 48 }}>
-        Dar de baja
-      </button>
+      {mermas.length > 0 && (
+        <div className="space-y-2">
+          <Label>MERMAS RECIENTES</Label>
+          {mermas.map((m) => (mermaSel?.id === m.id ? (
+            <div key={m.id} className="rounded-card p-3 space-y-3" style={{ background: C.surface, border: `1px solid ${C.brandLine}` }}>
+              <CantidadInput value={mermaSel.cantidad} onChange={(v) => setMermaSel({ ...mermaSel, cantidad: v })} unidad={insumo.unidad_base} />
+              <TextInput value={mermaSel.motivo} onChange={(v) => setMermaSel({ ...mermaSel, motivo: v })} placeholder="Motivo" />
+              <TextInput type="date" value={mermaSel.fecha} onChange={(v) => setMermaSel({ ...mermaSel, fecha: v })} />
+              <AccionesEdicion guardando={guardando} puedeGuardar={Number(mermaSel.cantidad) > 0}
+                onGuardar={() => rpcMerma(() => supabase.rpc('editar_merma', { p_mov: m.id, p_cantidad: Number(mermaSel.cantidad), p_motivo: mermaSel.motivo, p_fecha: mermaSel.fecha }))}
+                onEliminar={() => rpcMerma(() => supabase.rpc('anular_merma', { p_mov: m.id }))}
+                onCancelar={() => setMermaSel(null)} avisoEliminar="La cantidad regresa al inventario." />
+            </div>
+          ) : (
+            <button key={m.id} type="button" onClick={() => setMermaSel({ id: m.id, cantidad: String(-Number(m.cantidad)), motivo: m.motivo || '', fecha: m.dia_operativo })}
+              className="w-full flex items-center justify-between px-4 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 52 }}>
+              <span className="text-sm min-w-0 truncate" style={{ color: C.dim }}>{formatDiaCorto(m.dia_operativo)} · {m.motivo || 'Merma'}</span>
+              <span className="text-sm font-bold shrink-0" style={{ color: C.bad }}>−{fmtCantidad(-Number(m.cantidad), insumo.unidad_base)}</span>
+            </button>
+          )))}
+        </div>
+      )}
+      <AccionesEdicion guardando={guardando} onGuardar={() => guardar()} onEliminar={eliminar} onCancelar={onClose}
+        avisoEliminar="Si ya tiene movimientos, recetas o compras, se desactiva en lugar de borrarse (deja de aparecer en listas y conteos)." />
     </Sheet>
   );
 }

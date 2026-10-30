@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Plus, RefreshCw, Trash2, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, RefreshCw, Pencil, ChevronDown, ChevronUp, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
+import EditarPedido from '@/components/EditarPedido';
 import { Header } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN, formatHora } from '@/lib/calculos';
@@ -70,12 +71,10 @@ export default function HomePage() {
   const [refreshing,      setRefreshing]      = useState(false);
   const [diaSeleccionado, setDiaSeleccionado] = useState(null);   // null = hoy
   const [pedidoExpandido, setPedidoExpandido] = useState(null);
-  const [confirmEliminar, setConfirmEliminar] = useState(null);
+  const [editando, setEditando] = useState(null);   // pedido abierto en la hoja de edición
   const [diasSemana,      setDiasSemana]      = useState([]);
   const [semanaOffset,    setSemanaOffset]    = useState(0);      // 0 = semana actual
   const [resumenSemana,   setResumenSemana]   = useState(null);   // { totalPedidos, totalBurgers, totalIngresos }
-  const [editandoFechaPedido, setEditandoFechaPedido] = useState(null);
-  const [nuevaFecha,          setNuevaFecha]          = useState('');
 
   const hoyStr = diaOperativo();
 
@@ -108,6 +107,7 @@ export default function HomePage() {
       .from('pedidos')
       .select('total, pedido_items(cantidad)')
       .eq('cancelado', false)
+      .eq('anulado', false)
       .gte('fecha', inicio)
       .lte('fecha', fin);
     if (!data) return;
@@ -127,6 +127,7 @@ export default function HomePage() {
       .from('pedidos')
       .select('*, pedido_items(cantidad, precio, productos(nombre))')
       .eq('fecha', fechaBuscar)
+      .eq('anulado', false)
       .order('created_at', { ascending: false });
     if (!error && data) setPedidos(data);
     setLoading(false);
@@ -151,16 +152,6 @@ export default function HomePage() {
     setPedidos((prev) => prev.map((p) => p.id === id ? { ...p, estado: siguiente } : p));
   };
 
-  const eliminarPedido = async (id) => {
-    const { error: errItems } = await supabase.from('pedido_items').delete().eq('pedido_id', id);
-    if (errItems) { alert('Error al eliminar items: ' + errItems.message); return; }
-    const { error: errPedido } = await supabase.from('pedidos').delete().eq('id', id);
-    if (errPedido) { alert('Error al eliminar pedido: ' + errPedido.message); return; }
-    setPedidos((prev) => prev.filter((p) => p.id !== id));
-    setConfirmEliminar(null);
-    if (navigator.vibrate) navigator.vibrate(100);
-  };
-
   // Cancelar no borra: marca el pedido y el ledger revierte la venta (trigger en Postgres)
   const toggleCancelado = async (pedido) => {
     const cancelado = !pedido.cancelado;
@@ -168,14 +159,6 @@ export default function HomePage() {
     if (error) { alert('Error al cancelar: ' + error.message); return; }
     if (navigator.vibrate) navigator.vibrate(50);
     setPedidos((prev) => prev.map((p) => p.id === pedido.id ? { ...p, cancelado } : p));
-    cargarResumenSemana(semanaOffset);
-  };
-
-  const cambiarFechaPedido = async (id, fecha) => {
-    const { error } = await supabase.from('pedidos').update({ fecha }).eq('id', id);
-    if (error) { alert('Error al cambiar fecha: ' + error.message); return; }
-    setEditandoFechaPedido(null);
-    cargarPedidos(diaSeleccionado);
     cargarResumenSemana(semanaOffset);
   };
 
@@ -331,12 +314,12 @@ export default function HomePage() {
 
               return (
                 <div key={pedido.id} className="rounded-2xl overflow-hidden"
-                  style={{ background: 'var(--paper)', border: `1px solid ${est.color}22` }}>
+                  style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
 
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold tracking-wider px-2 py-0.5 rounded-full"
-                        style={{ background: `${est.color}22`, color: est.color }}>
+                        style={{ background: est.bg || 'var(--bad-soft)', color: est.color }}>
                         {est.label}
                       </span>
                       <div className="flex items-center gap-2">
@@ -395,59 +378,18 @@ export default function HomePage() {
                         </div>
                       </div>
 
-                      {editandoFechaPedido === pedido.id ? (
-                        <div className="mt-3 flex gap-2">
-                          <input
-                            type="date"
-                            value={nuevaFecha}
-                            max={hoyStr}
-                            onChange={(e) => setNuevaFecha(e.target.value)}
-                            className="flex-1 px-3 py-2 rounded-xl text-ink outline-none text-sm"
-                            style={{ background: 'var(--paper-2)', border: '1px solid var(--orange)' }}
-                          />
-                          <button
-                            onClick={() => nuevaFecha && cambiarFechaPedido(pedido.id, nuevaFecha)}
-                            disabled={!nuevaFecha}
-                            className="px-4 py-2 rounded-full font-bold text-sm"
-                            style={{ background: nuevaFecha ? 'var(--orange-fill)' : 'var(--line)', color: nuevaFecha ? 'var(--on-orange)' : 'var(--ink-mute)' }}>
-                            Guardar
-                          </button>
-                          <button
-                            onClick={() => setEditandoFechaPedido(null)}
-                            className="px-3 py-2 rounded-full text-sm"
-                            style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}>
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : confirmEliminar === pedido.id ? (
-                        <div className="mt-3 flex gap-2">
-                          <button onClick={() => setConfirmEliminar(null)}
-                            className="flex-1 py-2 rounded-full text-sm font-bold"
-                            style={{ background: 'var(--paper-2)', color: 'var(--ink-soft)' }}>Cancelar</button>
-                          <button onClick={() => eliminarPedido(pedido.id)}
-                            className="flex-1 py-2 rounded-full text-sm font-bold"
-                            style={{ background: 'var(--bad-soft)', color: 'var(--bad-ink)' }}>Confirmar borrar</button>
-                        </div>
-                      ) : (
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            onClick={() => { setEditandoFechaPedido(pedido.id); setNuevaFecha(pedido.fecha); }}
-                            className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-full"
-                            style={{ color: 'var(--ink-soft)', background: 'var(--paper-2)' }}>
-                            ✏️ Cambiar fecha
-                          </button>
-                          <button onClick={() => toggleCancelado(pedido)}
-                            className="flex items-center gap-1.5 text-sm py-2 px-3 rounded-full"
-                            style={{ color: pedido.cancelado ? 'var(--good-ink)' : 'var(--warn-ink)', background: 'var(--paper-2)' }}>
-                            {pedido.cancelado ? '↺ Reactivar' : '⊘ Cancelar'}
-                          </button>
-                          <button onClick={() => setConfirmEliminar(pedido.id)}
-                            className="flex items-center gap-2 text-sm py-2 px-3 rounded-full"
-                            style={{ color: 'var(--bad-ink)', background: 'var(--bad-soft)' }}>
-                            <Trash2 size={14} /> Eliminar
-                          </button>
-                        </div>
-                      )}
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button onClick={() => setEditando(pedido.id)}
+                          className="btn-accent flex items-center justify-center gap-1.5 text-sm rounded-full font-display"
+                          style={{ minHeight: 48 }}>
+                          <Pencil size={15} /> Editar
+                        </button>
+                        <button onClick={() => toggleCancelado(pedido)}
+                          className="flex items-center justify-center gap-1.5 text-sm rounded-full"
+                          style={{ color: pedido.cancelado ? 'var(--good-ink)' : 'var(--warn-ink)', background: 'var(--paper)', border: '1px solid var(--line)', minHeight: 48 }}>
+                          {pedido.cancelado ? '↺ Reactivar' : '⊘ Cancelar pedido'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -456,6 +398,11 @@ export default function HomePage() {
           </div>
         )}
       </main>
+
+      {editando && (
+        <EditarPedido pedidoId={editando} onClose={() => setEditando(null)}
+          onGuardado={() => { setEditando(null); cargarPedidos(diaSeleccionado); cargarResumenSemana(semanaOffset); }} />
+      )}
 
       <BottomNav />
     </div>

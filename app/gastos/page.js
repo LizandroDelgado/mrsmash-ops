@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Plus, ShoppingBag } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import MasMenu from '@/components/MasMenu';
+import ObligacionSheet from '@/components/ObligacionSheet';
+import AccionesEdicion from '@/components/AccionesEdicion';
 import { Header, Label, Chips, MontoInput, TextInput, BotonPrincipal, Sheet, Vacio, Cargando, CuentaChips, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
@@ -50,9 +52,9 @@ export default function GastosPage() {
   const [guardando,    setGuardando]    = useState(false);
 
   // Hojas
-  const [pagando,   setPagando]   = useState(null);  // obligación
-  const [pagoMonto, setPagoMonto] = useState('');
-  const [pagoCuenta, setPagoCuenta] = useState(null);
+  const [obligSel,  setObligSel]  = useState(null);   // id de la obligación abierta
+  const [verPagadas, setVerPagadas] = useState(false);
+  const [pagadas,   setPagadas]   = useState([]);
   const [gasto,     setGasto]     = useState(null);  // gasto recurrente en edición
   const [prov,      setProv]      = useState(null);  // proveedor en edición
   const [suelto,    setSuelto]    = useState(null);  // gasto suelto
@@ -61,13 +63,16 @@ export default function GastosPage() {
     // Genera las obligaciones de los próximos 90 días (idempotente)
     const { error: genErr } = await supabase.rpc('generar_obligaciones', { p_negocio: NEGOCIO_ID, p_hasta: sumarDias(diaOperativo(), 90) });
     if (genErr) setAviso({ texto: 'Error al generar pagos: ' + genErr.message, color: C.bad });
-    const [o, g, p, cs] = await Promise.all([
+    const [o, g, p, cs, pg] = await Promise.all([
       supabase.from('obligaciones').select('*, proveedores(nombre)').eq('negocio_id', NEGOCIO_ID)
         .in('estado', ['pendiente', 'parcial']).order('fecha_vencimiento'),
       supabase.from('gastos_recurrentes').select('*').eq('negocio_id', NEGOCIO_ID).eq('activo', true).order('created_at'),
       supabase.from('proveedores').select('*').eq('negocio_id', NEGOCIO_ID).eq('activo', true).order('nombre'),
       supabase.from('v_saldos_cuentas').select('*').eq('negocio_id', NEGOCIO_ID).eq('activa', true).order('orden'),
+      supabase.from('obligaciones').select('*, proveedores(nombre)').eq('negocio_id', NEGOCIO_ID)
+        .eq('estado', 'pagada').gte('fecha_vencimiento', sumarDias(diaOperativo(), -60)).order('fecha_vencimiento', { ascending: false }),
     ]);
+    setPagadas(pg.data || []);
     setObligaciones(o.data || []);
     setFijos(g.data || []);
     setProveedores(p.data || []);
@@ -80,30 +85,6 @@ export default function GastosPage() {
   const cuentaId = (clave) => cuentas.find((c) => c.clave === clave)?.cuenta_id;
   const ok = (texto) => { vibrar(); setAviso({ texto, color: C.ok }); setGuardando(false); cargar(); };
   const fallo = (err) => { setGuardando(false); alert('No se pudo guardar: ' + msgError(err)); };
-
-  // ── Pagar obligación ─────────────────────────────────────────
-  const abrirPago = (o) => {
-    const fijo = fijos.find((g) => g.id === o.gasto_recurrente_id);
-    setPagoMonto(String(Number(o.monto) - Number(o.monto_pagado)));
-    setPagoCuenta(fijo?.cuenta_pago_default || cuentaId('banco'));
-    setPagando(o);
-  };
-  const pagar = async () => {
-    const m = parseFloat(pagoMonto);
-    if (!(m > 0) || !pagoCuenta) return;
-    setGuardando(true);
-    const { data, error } = await supabase.rpc('pagar_obligacion', { p_obligacion: pagando.id, p_cuenta: pagoCuenta, p_monto: m });
-    if (error) return fallo(error);
-    setPagando(null);
-    ok(data?.estado === 'pagada' ? `Pagado: ${pagando.concepto}` : `Abonaste ${formatMXN(m)}, quedan ${formatMXN(data?.pendiente)}`);
-  };
-  const cancelarObligacion = async () => {
-    if (!confirm(`¿Cancelar "${pagando.concepto}"? No se mueve dinero.`)) return;
-    const { error } = await supabase.from('obligaciones').update({ estado: 'cancelada' }).eq('id', pagando.id);
-    if (error) return fallo(error);
-    setPagando(null);
-    ok('Pago cancelado');
-  };
 
   // ── Gastos fijos ─────────────────────────────────────────────
   const guardarGasto = async () => {
@@ -122,12 +103,13 @@ export default function GastosPage() {
     setGasto(null);
     ok(gasto.id ? 'Gasto fijo actualizado' : 'Gasto fijo agregado');
   };
-  const desactivarGasto = async () => {
-    if (!confirm(`¿Quitar "${gasto.concepto}"? Se cancelan sus pagos pendientes.`)) return;
-    const { error } = await supabase.from('gastos_recurrentes').update({ activo: false }).eq('id', gasto.id);
+  // Eliminar: se borra si no tiene pagos hechos; si los tiene, se desactiva y se explica por qué
+  const eliminarGasto = async () => {
+    setGuardando(true);
+    const { data, error } = await supabase.rpc('borrar_o_desactivar', { p_tabla: 'gastos_recurrentes', p_id: gasto.id });
     if (error) return fallo(error);
     setGasto(null);
-    ok('Gasto fijo eliminado');
+    ok(data?.resultado === 'borrado' ? 'Gasto fijo eliminado' : `Gasto fijo desactivado: ${data?.motivo}. Sus pagos futuros se cancelaron.`);
   };
 
   // ── Proveedores ──────────────────────────────────────────────
@@ -142,12 +124,12 @@ export default function GastosPage() {
     setProv(null);
     ok('Proveedor guardado');
   };
-  const borrarProv = async () => {
-    if (!confirm(`¿Quitar a ${prov.nombre}?`)) return;
-    const { error } = await supabase.from('proveedores').update({ activo: false }).eq('id', prov.id);
+  const eliminarProv = async () => {
+    setGuardando(true);
+    const { data, error } = await supabase.rpc('borrar_o_desactivar', { p_tabla: 'proveedores', p_id: prov.id });
     if (error) return fallo(error);
     setProv(null);
-    ok('Proveedor eliminado');
+    ok(data?.resultado === 'borrado' ? 'Proveedor eliminado' : `Proveedor desactivado: ${data?.motivo}`);
   };
 
   // ── Gasto suelto: crea obligación y opcionalmente la paga ────
@@ -192,7 +174,7 @@ export default function GastosPage() {
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
         {aviso && (
           <button type="button" onClick={() => setAviso(null)} className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold"
-            style={{ background: `${aviso.color}18`, color: aviso.color, border: `1px solid ${aviso.color}44` }}>
+            style={{ background: aviso.color === C.bad ? C.badSoft : aviso.color === C.warn ? C.warnSoft : C.okSoft, color: aviso.color, border: `1px solid ${C.border}` }}>
             {aviso.texto}
           </button>
         )}
@@ -214,7 +196,24 @@ export default function GastosPage() {
               ))}
             </div>
 
-            {obligaciones.length === 0 ? (
+            <Chips options={[{ key: false, label: `Pendientes (${obligaciones.length})` }, { key: true, label: 'Pagadas' }]} value={verPagadas} onChange={setVerPagadas} />
+            {verPagadas ? (
+              pagadas.length === 0 ? <p className="text-sm text-center py-6" style={{ color: C.dim }}>Sin pagos en los últimos 60 días.</p> : (
+                <div className="space-y-2">
+                  {pagadas.map((o) => (
+                    <button key={o.id} type="button" onClick={() => setObligSel(o.id)}
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-ink truncate">{o.concepto}</span>
+                        <span className="inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: C.okSoft, color: C.ok }}>Pagada</span>
+                        <span className="text-xs ml-2" style={{ color: C.dimmer }}>vencía {formatDiaCorto(o.fecha_vencimiento)}</span>
+                      </span>
+                      <span className="font-bold text-ink shrink-0">{formatMXN(o.monto)}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : obligaciones.length === 0 ? (
               <Vacio emoji="🧾" titulo="Nada por pagar"
                 texto="Agrega tus gastos fijos (renta, luz, nómina…) para ver qué se viene."
                 accion="Agrega tu primer gasto fijo" onAccion={() => { setTab('fijos'); setGasto({ ...GASTO_VACIO }); }} />
@@ -224,10 +223,10 @@ export default function GastosPage() {
                   const chip = chipVencimiento(o.fecha_vencimiento, hoy);
                   return (
                     <div key={o.id} className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
-                      <div className="min-w-0 flex-1">
+                      <button type="button" onClick={() => setObligSel(o.id)} className="min-w-0 flex-1 text-left" style={{ minHeight: 44 }}>
                         <p className="text-sm font-bold text-ink truncate">{o.concepto}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${chip.color}22`, color: chip.color }}>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: chip.color === C.bad ? C.badSoft : chip.color === C.warn ? C.warnSoft : C.surface2, color: chip.color }}>
                             {chip.texto}
                           </span>
                           <span className="text-xs" style={{ color: C.dimmer }}>
@@ -235,11 +234,11 @@ export default function GastosPage() {
                             {o.estado === 'parcial' && ` · abonado ${formatMXN(o.monto_pagado)}`}
                           </span>
                         </div>
-                      </div>
+                      </button>
                       <div className="text-right">
                         <p className="font-bold text-ink">{formatMXN(pendiente(o))}</p>
                       </div>
-                      <button type="button" onClick={() => abrirPago(o)} className="px-4 rounded-full font-bold text-sm"
+                      <button type="button" onClick={() => setObligSel(o.id)} className="px-4 rounded-full font-bold text-sm"
                         style={{ background: C.brandFill, color: 'var(--on-orange)' }}>Pagar</button>
                     </div>
                   );
@@ -311,29 +310,11 @@ export default function GastosPage() {
         </Link>
       </main>
 
-      {/* ── Hoja: pagar ── */}
-      <Sheet open={!!pagando} title={`Pagar · ${pagando?.concepto || ''}`} onClose={() => setPagando(null)}>
-        {pagando && (
-          <>
-            <div>
-              <Label color={C.brandText}>¿CUÁNTO PAGAS?</Label>
-              <MontoInput value={pagoMonto} onChange={setPagoMonto} />
-              <p className="text-xs mt-1" style={{ color: C.dimmer }}>Pendiente: {formatMXN(pendiente(pagando))} · puedes abonar menos</p>
-            </div>
-            <div>
-              <Label>¿DE QUÉ CUENTA?</Label>
-              <CuentaChips cuentas={cuentas} value={pagoCuenta} onChange={setPagoCuenta} excluir={['didi']} />
-            </div>
-            <BotonPrincipal onClick={pagar} disabled={guardando || !(parseFloat(pagoMonto) > 0) || !pagoCuenta}>
-              {guardando ? 'Guardando...' : 'PAGAR'}
-            </BotonPrincipal>
-            {pagando.origen !== 'compra_credito' && Number(pagando.monto_pagado) === 0 && (
-              <button type="button" onClick={cancelarObligacion} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: 'var(--bad-soft)', color: C.bad }}>No se va a pagar (cancelar)</button>
-            )}
-          </>
-        )}
-      </Sheet>
+      {obligSel && (
+        <ObligacionSheet obligacionId={obligSel} cuentas={cuentas} proveedores={proveedores} fijos={fijos}
+          onClose={() => { setObligSel(null); cargar(); }}
+          onCambio={(texto) => { vibrar(); setAviso({ texto, color: C.ok }); }} />
+      )}
 
       {/* ── Hoja: gasto fijo ── */}
       <Sheet open={!!gasto} title={gasto?.id ? 'Editar gasto fijo' : 'Nuevo gasto fijo'} onClose={() => setGasto(null)}>
@@ -374,13 +355,10 @@ export default function GastosPage() {
               <CuentaChips cuentas={cuentas} value={gasto.cuenta_pago_default} excluir={['didi']}
                 onChange={(v) => setGasto({ ...gasto, cuenta_pago_default: gasto.cuenta_pago_default === v ? null : v })} />
             </div>
-            <BotonPrincipal onClick={guardarGasto} disabled={guardando || !gasto.concepto.trim() || !(parseFloat(gasto.monto) > 0)}>
-              {guardando ? 'Guardando...' : 'GUARDAR'}
-            </BotonPrincipal>
-            {gasto.id && (
-              <button type="button" onClick={desactivarGasto} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: 'var(--bad-soft)', color: C.bad }}>Quitar este gasto fijo</button>
-            )}
+            <AccionesEdicion guardando={guardando} puedeGuardar={!!gasto.concepto.trim() && parseFloat(gasto.monto) > 0}
+              textoGuardar={gasto.id ? 'Guardar cambios' : 'Guardar'} onGuardar={guardarGasto}
+              onEliminar={gasto.id ? eliminarGasto : undefined} onCancelar={() => setGasto(null)}
+              avisoEliminar="Si ya tiene pagos hechos se desactiva (queda en el historial) y se cancelan sus pagos futuros." />
           </>
         )}
       </Sheet>
@@ -396,13 +374,10 @@ export default function GastosPage() {
               <Chips options={[{ key: '0', label: 'Contado' }, { key: '7', label: '7' }, { key: '15', label: '15' }, { key: '30', label: '30' }]}
                 value={String(prov.dias_credito)} onChange={(v) => setProv({ ...prov, dias_credito: v })} />
             </div>
-            <BotonPrincipal onClick={guardarProv} disabled={guardando || !prov.nombre.trim()}>
-              {guardando ? 'Guardando...' : 'GUARDAR'}
-            </BotonPrincipal>
-            {prov.id && (
-              <button type="button" onClick={borrarProv} className="w-full rounded-xl text-sm font-bold"
-                style={{ background: 'var(--bad-soft)', color: C.bad }}>Quitar proveedor</button>
-            )}
+            <AccionesEdicion guardando={guardando} puedeGuardar={!!prov.nombre.trim()}
+              textoGuardar={prov.id ? 'Guardar cambios' : 'Guardar'} onGuardar={guardarProv}
+              onEliminar={prov.id ? eliminarProv : undefined} onCancelar={() => setProv(null)}
+              avisoEliminar="Si ya tiene compras o pagos registrados se desactiva en lugar de borrarse." />
           </>
         )}
       </Sheet>

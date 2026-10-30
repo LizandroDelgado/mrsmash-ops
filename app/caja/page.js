@@ -1,9 +1,11 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Bike, Calculator } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ArrowLeftRight, Bike, Calculator, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import MasMenu from '@/components/MasMenu';
+import EditarMovimiento from '@/components/EditarMovimiento';
+import AccionesEdicion from '@/components/AccionesEdicion';
 import { Header, Label, Chips, MontoInput, TextInput, BotonPrincipal, Sheet, Vacio, Cargando, CuentaChips, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
@@ -27,16 +29,25 @@ export default function CajaPage() {
   const [aviso,       setAviso]       = useState(null);   // { texto, color }
   const [corteHoy,    setCorteHoy]    = useState(null);
   const [esperadoCorte, setEsperadoCorte] = useState(null);
+  const [movSel,      setMovSel]      = useState(null);   // fila de la vista neta abierta para editar
+  const [cortes,      setCortes]      = useState([]);
+  const [corteSel,    setCorteSel]    = useState(null);
+  const [contadoEdit, setContadoEdit] = useState('');
+  const [notaEdit,    setNotaEdit]    = useState('');
 
   const hoy = diaOperativo();
   const porClave = (clave) => cuentas.find((c) => c.clave === clave);
 
   const cargar = useCallback(async () => {
-    const [{ data: cs, error: e1 }, { data: ms }] = await Promise.all([
+    // Vista neta: una línea por operación y cuenta, sin pares de reverso; las anuladas suman 0 y no se muestran
+    const [{ data: cs, error: e1 }, { data: ms }, { data: co }] = await Promise.all([
       supabase.from('v_saldos_cuentas').select('*').eq('negocio_id', NEGOCIO_ID).eq('activa', true).order('orden'),
-      supabase.from('movimientos').select('*').eq('negocio_id', NEGOCIO_ID)
-        .order('created_at', { ascending: false }).limit(100),
+      supabase.from('v_movimientos_caja').select('*').eq('negocio_id', NEGOCIO_ID).neq('monto', 0)
+        .order('actualizado', { ascending: false }).limit(100),
+      supabase.from('cortes_caja').select('*').eq('negocio_id', NEGOCIO_ID).eq('anulado', false)
+        .order('dia_operativo', { ascending: false }).limit(7),
     ]);
+    setCortes(co || []);
     if (e1) setAviso({ texto: 'Error al cargar cuentas: ' + e1.message, color: C.bad });
     setCuentas(cs || []);
     setMovs(ms || []);
@@ -59,7 +70,7 @@ export default function CajaPage() {
       setCorteHoy(null); setEsperadoCorte(null);
       if (caja) {
         const [{ data: corte }, { data: esp }] = await Promise.all([
-          supabase.from('cortes_caja').select('*').eq('cuenta_id', caja.cuenta_id).eq('dia_operativo', hoy).maybeSingle(),
+          supabase.from('cortes_caja').select('*').eq('cuenta_id', caja.cuenta_id).eq('dia_operativo', hoy).eq('anulado', false).maybeSingle(),
           supabase.rpc('saldo_cuenta', { p_cuenta: caja.cuenta_id, p_hasta_dia: hoy }),
         ]);
         setCorteHoy(corte || null);
@@ -165,7 +176,7 @@ export default function CajaPage() {
       <main className="flex-1 px-4 pt-4 pb-32 space-y-4">
         {aviso && (
           <button type="button" onClick={() => setAviso(null)} className="w-full text-left px-4 py-3 rounded-xl text-sm font-bold"
-            style={{ background: `${aviso.color}18`, color: aviso.color, border: `1px solid ${aviso.color}44` }}>
+            style={{ background: aviso.color === C.bad ? C.badSoft : aviso.color === C.warn ? C.warnSoft : C.okSoft, color: aviso.color, border: `1px solid ${C.border}` }}>
             {aviso.texto}
           </button>
         )}
@@ -236,9 +247,13 @@ export default function CajaPage() {
               {movsFiltrados.map((m) => {
                 const pos = Number(m.monto) >= 0;
                 return (
-                  <div key={m.id} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
+                  <button key={`${m.clave}-${m.cuenta_id}`} type="button" onClick={() => setMovSel(m)}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}` }}>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-ink font-medium truncate">{m.descripcion || TIPOS_MOVIMIENTO[m.tipo]}</p>
+                      <p className="text-sm text-ink font-medium truncate">
+                        {m.descripcion || TIPOS_MOVIMIENTO[m.tipo]}
+                        {m.editado && <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-bold" style={{ background: C.warnSoft, color: C.warn }}>Editado</span>}
+                      </p>
                       <p className="text-xs truncate" style={{ color: C.dimmer }}>
                         {TIPOS_MOVIMIENTO[m.tipo]} · {nombreCuenta(m.cuenta_id)} · {formatFechaHora(m.fecha)}
                       </p>
@@ -246,13 +261,71 @@ export default function CajaPage() {
                     <span className="font-bold ml-3 whitespace-nowrap" style={{ color: pos ? C.ok : C.bad }}>
                       {pos ? '+' : '−'}{formatMXN(Math.abs(m.monto))}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           )}
         </div>
+        {/* ── Cortes recientes (editar / anular) ── */}
+        {cortes.length > 0 && (
+          <div>
+            <Label>CORTES RECIENTES</Label>
+            <div className="space-y-2">
+              {cortes.map((c) => (
+                <button key={c.id} type="button" onClick={() => { setCorteSel(c); setContadoEdit(String(Number(c.saldo_contado))); setNotaEdit(c.notas || ''); }}
+                  className="w-full flex items-center justify-between px-4 rounded-xl text-left" style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 56 }}>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-ink">{formatDiaCorto(c.dia_operativo)} · {nombreCuenta(c.cuenta_id)}</span>
+                    <span className="block text-xs" style={{ color: C.dimmer }}>Contado {formatMXN(c.saldo_contado)}</span>
+                  </span>
+                  <span className="flex items-center gap-1 text-sm font-bold" style={{ color: Number(c.diferencia) === 0 ? C.ok : Number(c.diferencia) < 0 ? C.bad : C.warn }}>
+                    {Number(c.diferencia) === 0 ? 'Cuadró' : formatMXN(c.diferencia)} <ChevronRight size={16} style={{ color: C.dim }} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
+
+      {movSel && (
+        <EditarMovimiento mov={movSel} cuentas={cuentas}
+          movsGrupo={movs.filter((x) => x.clave === movSel.clave)}
+          onClose={() => setMovSel(null)}
+          onGuardado={() => { setMovSel(null); terminar('Movimiento corregido'); }} />
+      )}
+
+      <Sheet open={!!corteSel} title={corteSel ? `Corte · ${formatDiaCorto(corteSel.dia_operativo)}` : ''} onClose={() => setCorteSel(null)}>
+        {corteSel && (
+          <>
+            <p className="text-sm" style={{ color: C.dim }}>Esperado al hacer el corte: <b style={{ color: C.ink }}>{formatMXN(corteSel.saldo_esperado)}</b>. Al guardar se recalcula con los movimientos de ese día.</p>
+            <div><Label>¿CUÁNTO CONTASTE?</Label><MontoInput value={contadoEdit} onChange={setContadoEdit} /></div>
+            <TextInput value={notaEdit} onChange={setNotaEdit} placeholder="Nota (opcional)" />
+            <AccionesEdicion guardando={guardando}
+              puedeGuardar={contadoEdit !== '' && parseFloat(contadoEdit) >= 0}
+              onGuardar={async () => {
+                setGuardando(true);
+                const { data, error } = await supabase.rpc('editar_corte', { p_corte: corteSel.id, p_contado: parseFloat(contadoEdit), p_notas: notaEdit });
+                setGuardando(false);
+                if (error) { alert('No se guardó: ' + msgError(error)); return; }
+                setCorteSel(null);
+                const dif = Number(data?.diferencia || 0);
+                terminar(dif === 0 ? 'Corte corregido: cuadra ✓' : `Corte corregido: ${dif < 0 ? 'faltan' : 'sobran'} ${formatMXN(Math.abs(dif))}`, dif === 0 ? C.ok : dif < 0 ? C.bad : C.warn);
+              }}
+              onEliminar={async () => {
+                setGuardando(true);
+                const { error } = await supabase.rpc('anular_corte', { p_corte: corteSel.id });
+                setGuardando(false);
+                if (error) { alert('No se pudo eliminar: ' + msgError(error)); return; }
+                setCorteSel(null);
+                terminar('Corte eliminado: su ajuste se revirtió');
+              }}
+              onCancelar={() => setCorteSel(null)}
+              avisoEliminar="Se revierte el ajuste del corte. Podrás volver a hacer el corte de ese día." />
+          </>
+        )}
+      </Sheet>
 
       {/* ── Hoja de acción ── */}
       <Sheet open={!!accion} title={titulos[accion]} onClose={cerrar}>

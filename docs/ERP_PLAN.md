@@ -602,6 +602,83 @@ where pi.producto_id = '<TEST Burger>';
 
 ---
 
+## 4f. Editar y eliminar todo (migraciones 08 y 09, 2026-10-30)
+
+Todo lo que el dueño captura se puede editar y eliminar desde la app, y caja, inventario y reportes siguen cuadrando.
+
+### Reglas de integridad
+- **El ledger nunca se edita encima.** Editar = revertir el grupo original y registrar uno nuevo. Eliminar = solo revertir.
+  - La clave de grupo de un movimiento es `COALESCE(grupo_id, transferencia_id, ref_id, id)`.
+  - `revertir_grupo(clave, motivo)` revierte el neto vigente del grupo, con fecha del día original, así los saldos de cada día quedan como si el error no hubiera existido.
+- **Inventario funciona igual.** Editar el desglose de una compra o anularla recalcula el costo promedio con `recalcular_costo_promedio(insumo)`:
+  - Toma como base el último costo manual, o el costo previo al primer cambio registrado.
+  - Desde ahí reproduce las entradas vivas en orden de captura.
+- **Eliminar algo que movió dinero o inventario = anular.** Columnas `anulado` y `anulado_at` en pedidos, compras_insumos, movimientos, cortes_caja, pagos_obligacion, inventario_movimientos y conteos_inventario.
+- **Lo que no mueve nada se borra físicamente.** Si tiene registros ligados se desactiva, y la app explica por qué. Lo hace `borrar_o_desactivar(tabla, id)` para proveedores, gastos fijos e insumos.
+- **Vista `v_movimientos_caja`:** muestra una línea neta por operación y cuenta, con las banderas `editado` (tuvo reversos y sigue viva) y `anulado` (neto 0, la UI lo oculta).
+- **Auditoría:** tabla `auditoria_cambios` (tabla, registro, acción editar/anular/borrar, antes → después solo de los campos que cambiaron, y `etiqueta` legible desde la 09).
+  - La llena el trigger genérico `trg_auditoria`, presente en 17 tablas, cada una con su lista de columnas derivadas que se ignoran.
+  - Los cambios de estado de una obligación causados por pagos no se registran como ediciones.
+
+### Qué se puede editar y eliminar
+| Pantalla | Registro | Editar | Eliminar | Cómo cuadra |
+|---|---|---|---|---|
+| Por pagar | Obligación | `editar_obligacion(id, datos, 'solo' \| 'siguientes')` | `cancelar_obligacion`: anula sus pagos y conserva el periodo, así `generar_obligaciones` no la recrea | Con 'siguientes' cambia la plantilla del gasto fijo y deja intactos los meses anteriores |
+| Por pagar | Pago (también parciales) | `editar_pago(monto, cuenta, fecha)` | `anular_pago` ("Marcar como no pagada") | Revierte y vuelve a registrar el grupo del pago; `recalcular_obligacion` |
+| Por pagar | Gasto fijo, proveedor | Hoja con datos | `borrar_o_desactivar` | Sin dinero |
+| Pedidos | Pedido y productos | `editar_pedido(id, {items, canal, …})`: el total se recalcula y Didi se neta con los 3 % | `anulado=true`, que también lo marca cancelado | Los triggers de ledger e inventario revierten y vuelven a aplicar |
+| Compras | Compra | Monto, método, proveedor, fecha | `anulado=true` | `deshacer_compra` + reverso de inventario + costo promedio recalculado |
+| Compras | Desglose | Cantidad y costo de cada insumo | "Quitar" | Revierte el inventario y recalcula el costo promedio |
+| Caja | Retiro, meter dinero, transferencia, cobró Didi, saldo inicial | `editar_movimiento(id, datos)` | `anular_movimiento` | Por grupo; Caja muestra la línea neta con "Editado" |
+| Caja | Corte | `editar_corte(contado, notas)` | `anular_corte`; ese día se puede volver a cortar | El ajuste del corte se recalcula |
+| Inventario | Merma | `editar_merma(cantidad, motivo, fecha)` | `anular_merma` | Kardex |
+| Inventario | Conteo cerrado | `editar_conteo_item(item, físico)` | `anular_conteo`: el inventario queda como antes | Kardex |
+| Inventario | Insumo | Hoja con datos | `borrar_o_desactivar` | Sin dinero |
+| Inventario | Carga inicial | Se corrige con un conteo | — | Kardex |
+| Configuración | Precios, % Didi, productos, recetas | Ya existía | Ya existía | Los pedidos guardan precio y costo del momento |
+
+### UX
+- Un solo patrón: tocar una fila abre una hoja con los datos prellenados y tres acciones (`components/AccionesEdicion.js`):
+  - **Guardar cambios.**
+  - **Eliminar**, en texto rojo y con confirmación "¿Seguro?" en línea.
+  - **Cancelar.**
+- Hojas: `EditarPedido`, `EditarMovimiento`, `ObligacionSheet` (pagar, ver y editar pagos parciales, deshacer pagos, datos y alcance), `EditarCompra`, `ConteoCerradoSheet`. Las mermas recientes se editan dentro del detalle del insumo.
+- **Configuración → Historial de cambios** (`/configuracion/historial`): filtros Todo, Pedidos, Compras, Caja, Por pagar, Inventario y Menú y ajustes, con antes → después por campo.
+
+---
+
+## 5e. Bitácora de editar y eliminar (2026-10-30)
+
+**Respaldos previos:**
+- `mrsmash_public_20261030_1044_pre_editar.sql` (387,489 bytes), antes de la 08.
+- `mrsmash_public_20261030_1054_pre_etiqueta.sql` (438,965 bytes), antes de la 09.
+
+Ambos en `C:\Users\alwes\mrsmash_backups\`.
+
+**Aplicación:** la 08 y la 09 con `psql --single-transaction -v ON_ERROR_STOP=1`, exit 0, seguidas de `NOTIFY pgrst, 'reload schema'`. Quedaron 17 triggers de auditoría.
+- **Huella del histórico** (md5 de id, precio y costo de las 565 partidas): `c4b8e28d621289e15c330cc956535379`. Es la misma antes de la 08, después de la 08 y después de las pruebas y la limpieza.
+
+**Pruebas locales** (PGlite con el histórico real, migraciones 01–09 aplicadas dos veces):
+- Editar y anular: 43/43. Incluye los 5 criterios, retiro, transferencia, cobro Didi, corte (editar, anular y rehacer), merma, conteo, `borrar_o_desactivar`, auditoría con etiqueta, limpieza a cero e histórico intacto.
+- Suites anteriores: 27, 27, 48 y 53, sin fallas.
+
+**Pruebas en producción (datos TEST, API con la key de la app):**
+| Criterio | Resultado |
+|---|---|
+| Obligación $600 → $750: Por pagar 7 días y 30 días +150 ($29,400 → $29,550); dinero comprometido +150 ($29,889.18 → $30,039.18) | PASS |
+| Auditoría: `obligaciones` editar {monto 600 → 750} | PASS |
+| Pago $750 desde Banco y luego cambiado a Caja: Banco regresa a $5,000, Caja baja a $4,250, el total solo baja los $750 del pago | PASS |
+| Caja muestra una sola línea neta, Caja −$750 "Editado" | PASS |
+| Pedido de 2 → 3 burgers: total $450, Caja +$450, carne −300 g, una línea "Editado" | PASS |
+| Compra con desglose 5 kg a $300/kg (promedio 0.2 → 0.2515) anulada: stock, costo promedio 0.2 y Caja como estaban | PASS |
+| La compra queda anulada (no borrada) y aparece en auditoría como "anular" | PASS |
+| Cancelar la obligación de 2026-11 de un gasto fijo y correr `generar_obligaciones`: no se recrea | PASS |
+| `limpiar_test.sql`: 0 TEST, 0 auditoría, 0 cortes, saldos en $0, huella igual | PASS |
+
+**360 px:** 7 hojas de edición más el Historial, en claro y oscuro (pedido, movimiento de caja, corte, obligación, compra, insumo con mermas y conteo cerrado). Todas abren, sin scroll horizontal y sin targets de menos de 44 px. Se probó con datos TEST que luego se limpiaron.
+
+---
+
 ## 6. Pendiente
 
 **Fase 1b pendiente: importador de Soft Restaurant, requiere export real.**

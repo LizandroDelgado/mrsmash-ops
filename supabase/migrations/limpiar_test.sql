@@ -28,6 +28,26 @@ CREATE TEMP TABLE t_ref  ON COMMIT DROP AS
 CREATE TEMP TABLE t_mov  ON COMMIT DROP AS
   SELECT movimiento_id AS id FROM pagos_obligacion WHERE obligacion_id IN (SELECT id FROM t_obl)
   UNION SELECT movimiento_id FROM cortes_caja WHERE notas LIKE 'TEST%' AND movimiento_id IS NOT NULL;
+-- Migración 08: grupos de movimientos (pagos, cortes y movimientos manuales con sus reversos)
+CREATE TEMP TABLE t_pag  ON COMMIT DROP AS SELECT id FROM pagos_obligacion WHERE obligacion_id IN (SELECT id FROM t_obl);
+CREATE TEMP TABLE t_cor  ON COMMIT DROP AS SELECT id FROM cortes_caja WHERE notas LIKE 'TEST%';
+CREATE TEMP TABLE t_grp  ON COMMIT DROP AS
+  SELECT COALESCE(grupo_id, transferencia_id, ref_id, id) AS id FROM movimientos WHERE descripcion LIKE 'TEST%'
+  UNION SELECT id FROM t_pag UNION SELECT id FROM t_cor
+  UNION SELECT COALESCE(m.grupo_id, m.transferencia_id, m.ref_id, m.id) FROM movimientos m WHERE m.id IN (SELECT id FROM t_mov);
+-- Auditoría: ids de todo lo TEST (se borran sus filas al final, junto con las que genera esta limpieza)
+CREATE TEMP TABLE t_aud  ON COMMIT DROP AS
+  SELECT id FROM t_ped UNION SELECT id FROM pedido_items WHERE pedido_id IN (SELECT id FROM t_ped)
+  UNION SELECT id FROM t_comp UNION SELECT id FROM compra_items WHERE compra_id IN (SELECT id FROM t_comp)
+  UNION SELECT id FROM t_obl UNION SELECT id FROM t_pag UNION SELECT id FROM t_cor
+  UNION SELECT id FROM t_prov UNION SELECT id FROM t_gr UNION SELECT id FROM t_grp
+  UNION SELECT id FROM movimientos WHERE COALESCE(grupo_id, transferencia_id, ref_id, id) IN (SELECT id FROM t_grp)
+  UNION SELECT id FROM insumos WHERE nombre LIKE 'TEST%' UNION SELECT id FROM productos WHERE nombre LIKE 'TEST%'
+  UNION SELECT id FROM conteos_inventario WHERE notas LIKE 'TEST%'
+  UNION SELECT id FROM inventario_movimientos WHERE insumo_id IN (SELECT id FROM insumos WHERE nombre LIKE 'TEST%')
+  UNION SELECT id FROM recetas WHERE insumo_id IN (SELECT id FROM insumos WHERE nombre LIKE 'TEST%')
+                                  OR producto_id IN (SELECT id FROM productos WHERE nombre LIKE 'TEST%')
+  UNION SELECT id FROM conteo_items WHERE insumo_id IN (SELECT id FROM insumos WHERE nombre LIKE 'TEST%');
 
 -- 1) Pagos de obligaciones de prueba (y desbloquear las compras a crédito para poder borrarlas)
 DELETE FROM pagos_obligacion WHERE obligacion_id IN (SELECT id FROM t_obl);
@@ -48,6 +68,7 @@ WHERE id IN (SELECT id FROM t_mov)
    OR ref_id IN (SELECT id FROM t_ped UNION SELECT id FROM t_comp UNION SELECT id FROM t_obl
                  UNION SELECT id FROM t_didi UNION SELECT id FROM t_ref)
    OR descripcion LIKE 'TEST%'
+   OR COALESCE(grupo_id, transferencia_id, ref_id, id) IN (SELECT id FROM t_grp)
    OR transferencia_id IN (SELECT transferencia_id FROM movimientos
                            WHERE descripcion LIKE 'TEST%' AND transferencia_id IS NOT NULL);
 
@@ -70,5 +91,11 @@ DELETE FROM productos              WHERE id IN (SELECT id FROM t_prod);
 DELETE FROM obligaciones       WHERE id IN (SELECT id FROM t_obl);
 DELETE FROM gastos_recurrentes WHERE id IN (SELECT id FROM t_gr);
 DELETE FROM proveedores        WHERE id IN (SELECT id FROM t_prov);
+
+-- 6) Auditoría de lo TEST (incluye las filas "borrar" que generó esta misma limpieza)
+DELETE FROM auditoria_cambios
+WHERE registro_id IN (SELECT id FROM t_aud)
+   OR antes::text LIKE '%TEST%' OR despues::text LIKE '%TEST%'
+   OR created_at = now();   -- filas que generó esta limpieza (reversos y borrados de lo TEST)
 
 COMMIT;

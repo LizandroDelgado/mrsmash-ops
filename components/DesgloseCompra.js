@@ -9,6 +9,7 @@ import { NEGOCIO_ID, vibrar, msgError } from '@/lib/negocio';
 import { UNIDAD_GRANDE } from '@/lib/inventario';
 import { C, Sheet, Label, Chips, MontoInput, CantidadInput, BotonPrincipal } from '@/components/ui';
 import BuscadorInsumos from '@/components/BuscadorInsumos';
+import AccionesEdicion from '@/components/AccionesEdicion';
 
 // Unidades en que se puede comprar cada insumo, con su factor a unidad_base
 const UNIDADES_COMPRA = {
@@ -30,6 +31,7 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
   const [costo,     setCosto]     = useState('');
   const [gramos,    setGramos]    = useState('');   // gramos (o ml) por porción
   const [guardando, setGuardando] = useState(false);
+  const [edit,      setEdit]      = useState(null);   // { id, cantidad, costo } partida en edición
 
   const cargar = async () => {
     const [{ data: its }, { data: ins }, { data: rec }] = await Promise.all([
@@ -94,6 +96,18 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
     onCambio?.();
   };
 
+  // Editar una partida: el trigger revierte su entrada, la vuelve a aplicar y recalcula el costo promedio
+  const guardarEdit = async () => {
+    setGuardando(true);
+    const { error } = await supabase.from('compra_items').update({ cantidad: Number(edit.cantidad), costo_total: Number(edit.costo) }).eq('id', edit.id);
+    setGuardando(false);
+    if (error) { alert(msgError(error)); return; }
+    vibrar();
+    setEdit(null);
+    await cargar();
+    onCambio?.();
+  };
+
   const quitar = async (id) => {
     const { error } = await supabase.from('compra_items').delete().eq('id', id);
     if (error) { alert(msgError(error)); return; }
@@ -115,16 +129,31 @@ export default function DesgloseCompra({ compra, onClose, onCambio }) {
           {items.map((i) => {
             const base = Number(i.cantidad) * Number(i.factor_conversion);
             const u = UNIDAD_GRANDE[i.insumos?.unidad_base] || UNIDAD_GRANDE.pza;
+            if (edit?.id === i.id) {
+              return (
+                <div key={i.id} className="rounded-card p-3 space-y-3" style={{ background: C.surface, border: `1px solid ${C.brandLine}` }}>
+                  <p className="text-sm font-bold text-ink">{i.insumos?.nombre}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <CantidadInput value={edit.cantidad} onChange={(v) => setEdit({ ...edit, cantidad: v })} unidad={i.unidad_compra} />
+                    <MontoInput value={edit.costo} onChange={(v) => setEdit({ ...edit, costo: v })} />
+                  </div>
+                  <AccionesEdicion guardando={guardando} puedeGuardar={Number(edit.cantidad) > 0 && edit.costo !== '' && Number(edit.costo) >= 0}
+                    onGuardar={guardarEdit} onEliminar={async () => { setEdit(null); await quitar(i.id); }} textoEliminar="Quitar"
+                    onCancelar={() => setEdit(null)} avisoEliminar="Sale del inventario y el costo promedio se recalcula." />
+                </div>
+              );
+            }
             return (
               <div key={i.id} className="flex items-center justify-between px-4 rounded-xl"
                 style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 56 }}>
-                <div className="min-w-0">
+                <button type="button" onClick={() => setEdit({ id: i.id, cantidad: String(Number(i.cantidad)), costo: String(Number(i.costo_total)) })}
+                  className="min-w-0 flex-1 text-left" style={{ minHeight: 48 }}>
                   <p className="text-sm font-bold text-ink truncate">{i.insumos?.nombre}</p>
                   <p className="text-xs" style={{ color: C.dimmer }}>
                     {Number(i.cantidad)} {i.unidad_compra} · {formatMXN(Number(i.costo_total))}
                     {base > 0 && ` · ${formatMXN2((Number(i.costo_total) / base) * u.factor)}/${u.label}`}
                   </p>
-                </div>
+                </button>
                 <button type="button" onClick={() => quitar(i.id)} aria-label="Quitar"
                   className="flex items-center justify-center rounded-full shrink-0"
                   style={{ width: 48, height: 48, background: C.surface2 }}>

@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Tags, ChevronRight } from 'lucide-react';
+import { Tags, ChevronRight, History } from 'lucide-react';
 import { Header, Label, Chips, MontoInput, TextInput, BotonPrincipal, Cargando, C } from '@/components/ui';
 import { supabase } from '@/lib/supabase/client';
 import { formatMXN } from '@/lib/calculos';
@@ -117,6 +117,18 @@ export default function ConfiguracionPage() {
           <span className="flex-1 min-w-0">
             <span className="block font-display text-xl" style={{ color: C.ink, fontWeight: 600 }}>Precios y costos</span>
             <span className="block text-xs" style={{ color: C.dim }}>Precios por canal, recetas, costos de insumos y ajustes</span>
+          </span>
+          <ChevronRight size={20} style={{ color: C.dim }} />
+        </Link>
+
+        <Link href="/configuracion/historial" className="flex items-center gap-3 px-4 rounded-card"
+          style={{ background: C.surface, border: `1px solid ${C.border}`, minHeight: 64 }}>
+          <span className="flex items-center justify-center rounded-full shrink-0" style={{ width: 44, height: 44, background: C.surface2 }}>
+            <History size={22} style={{ color: C.ink }} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-display text-lg" style={{ color: C.ink, fontWeight: 600 }}>Historial de cambios</span>
+            <span className="block text-xs" style={{ color: C.dim }}>Todo lo que se editó, anuló o borró</span>
           </span>
           <ChevronRight size={20} style={{ color: C.dim }} />
         </Link>
