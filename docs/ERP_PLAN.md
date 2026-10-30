@@ -554,6 +554,54 @@ Se entra desde un botón grande en Configuración. Cuatro pestañas:
 
 ---
 
+## 5d. Bitácora de precios y costos (2026-10-30)
+
+**Respaldo previo:** `C:\Users\alwes\mrsmash_backups\mrsmash_public_20261030_0902_pre_precios.sql` (369,315 bytes). Conteos: 301 pedidos, 565 partidas, 11 productos, 21 insumos, 98 líneas de receta.
+
+**Aplicación:** la 07 con `psql --single-transaction -v ON_ERROR_STOP=1`, exit 0; RLS desactivado en las 2 tablas nuevas.
+- **Huella del histórico:** md5 de (id, precio, costo) de las 565 partidas = `c4b8e28d621289e15c330cc956535379` antes de la 07, después de la 07 y después de las pruebas y la limpieza. El histórico no se tocó.
+- **Estado tras aplicar:**
+  - % de Didi: 23.62 / 16.68 / 4.61.
+  - `costo_insumos` igual al costo de receta (por ejemplo, Doble Smash $70 → $71.43).
+  - Doble Smash en Didi: neto $145.07, cobro $133.87.
+  - `precio_salon` igual a WhatsApp.
+
+**Pruebas locales** (réplica PGlite con el histórico real, migraciones 01–07 aplicadas dos veces):
+- Precios y costos: 27/27.
+- Las suites anteriores siguen pasando: 27, 26, 48 y 53, ajustadas a dos reglas nuevas: el costo sigue a la receta y la venta neta ya no resta retenciones.
+
+**Pruebas en producción (datos TEST, API con la key de la app):**
+| Criterio | Resultado |
+|---|---|
+| % de Didi y margen mínimo prellenados (23.62 / 16.68 / 4.61 / 55 %) | PASS |
+| Receta TEST (carne 160 g + pan) → `costo_insumos` $41.20, sincronizado solo | PASS |
+| Carne $195 → $220/kg → costo de receta y `costo_insumos` $45.20; `historial_costos` 0.195 → 0.22, manual, con motivo | PASS |
+| Cambio de precio $120 → $139: venta anterior $120 / $41.20; venta nueva sin precio ni costo (como el bot) $139 / $45.20 | PASS |
+| Bot: `GET /api/menu` en Vercel devuelve $139 sin redeploy | PASS |
+| Nuevo pedido (misma consulta que la pantalla): $139; Didi neto $136.71 y cobro $126.16 | PASS |
+| Dashboard: margen WhatsApp 139 − 45.20 = $93.80 | PASS |
+| Lote con un insumo inexistente → error "Insumo no encontrado"; precio, costo e historial sin cambios | PASS |
+| +5 % con terminación 9: 139→149, 229→249, 120→129; lo guardado = la vista previa | PASS |
+| `historial_precios`: 5 filas (2 del cambio + 3 del +5 %), cada una con su motivo | PASS |
+| Compra 4 kg por $1,000 → historial "compra" a $0.25/g y `costo_insumos` $50 solo | PASS |
+| Insight: "TEST carne subió 28 %", margen −$8.80 en TEST Burger | PASS |
+| `limpiar_test.sql` → 0 TEST, historiales en 0, cuentas en $0, huella del histórico igual | PASS |
+
+**Query que prueba que las ventas viejas conservan su precio:**
+```sql
+select pi.precio, pi.costo, pe.cliente_nombre
+from pedido_items pi join pedidos pe on pe.id = pi.pedido_id
+where pi.producto_id = '<TEST Burger>';
+-- TEST antes   | 120 | 41.20   ← vendida antes del cambio
+-- TEST despues | 139 | 45.20   ← vendida después (tomó precio y costo vigentes)
+```
+
+**360 px:** sin scroll horizontal y sin targets de menos de 44 px en 9 vistas × 2 temas: Configuración, Productos, detalle y edición en vivo, Insumos, impacto, Masivo, Historial y la hoja de revisión.
+
+**PWA:** íconos 192/512 con el logo dentro de la zona segura (radio máximo 34–35 %, el límite es 40 %) y `purpose: "any maskable"` en el manifest.
+
+---
+
 ## 6. Pendiente
 
 **Fase 1b pendiente: importador de Soft Restaurant, requiere export real.**
