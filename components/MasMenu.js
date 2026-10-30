@@ -2,12 +2,13 @@
 // Menú "Más" del encabezado: pantallas que salieron de la barra inferior.
 import { useState } from 'react';
 import Link from 'next/link';
-import { MoreVertical, ShoppingBag, BookOpen, ClipboardList, Settings } from 'lucide-react';
+import { MoreVertical, Tags, ShoppingBag, ClipboardList, Settings } from 'lucide-react';
 import { Sheet, C } from '@/components/ui';
 
+// Recetas se editan en Precios y costos; /inventario/recetas sigue disponible desde Inventario.
 const ITEMS = [
+  { href: '/configuracion/precios-costos', icon: Tags, label: 'Precios y costos' },
   { href: '/insumos',       icon: ShoppingBag,   label: 'Compras de insumos' },
-  { href: '/inventario/recetas', icon: BookOpen, label: 'Recetas y costos' },
   { href: '/importar',      icon: ClipboardList, label: 'Importar Didi' },
   { href: '/configuracion', icon: Settings,      label: 'Configuración y saldos' },
 ];

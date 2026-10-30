@@ -1,5 +1,7 @@
 'use client';
 // Piezas compartidas. Los colores son tokens de marca (app/globals.css): nunca hex aquí.
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { X, ChevronLeft } from 'lucide-react';
 
@@ -160,25 +162,33 @@ export function BotonSecundario({ children, onClick, disabled, peligro = false, 
 }
 
 // Hoja inferior modal: se abre con un toque, se guarda con otro.
+// Se dibuja con un portal directo en <body>: así ningún contenedor con su propio contexto de
+// apilamiento (p. ej. el Header sticky z-40, donde vive el menú "Más") la deja debajo del nav.
+// z-[100] > BottomNav (z-50) y barras fijas; 85vh con scroll interno y safe-area inferior.
 export function Sheet({ open, title, onClose, children }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end" style={{ background: C.overlay }}
-      onClick={onClose}>
-      <div className="px-4 pt-3 space-y-4 overflow-y-auto"
-        style={{ background: C.bg, borderTop: `1px solid ${C.border}`, maxHeight: '92vh',
-                 borderRadius: '22px 22px 0 0', paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}
+  const [montado, setMontado] = useState(false);
+  useEffect(() => { setMontado(true); }, []);
+  if (!open || !montado) return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end" style={{ background: C.overlay }}
+      onClick={onClose} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}>
+      <div className="flex flex-col"
+        style={{ background: C.bg, borderTop: `1px solid ${C.border}`, maxHeight: '85vh', borderRadius: '22px 22px 0 0' }}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl" style={{ color: C.ink, fontWeight: 600 }}>{title}</h2>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 shrink-0">
+          <h2 className="text-xl min-w-0 truncate" style={{ color: C.ink, fontWeight: 600 }}>{title}</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar"
-            className="flex items-center justify-center rounded-full" style={{ width: 48, background: C.surface, border: `1px solid ${C.border}` }}>
+            className="flex items-center justify-center rounded-full shrink-0" style={{ width: 48, background: C.surface, border: `1px solid ${C.border}` }}>
             <X size={20} style={{ color: C.ink }} />
           </button>
         </div>
-        {children}
+        <div className="px-4 pt-2 space-y-4 overflow-y-auto overscroll-contain"
+          style={{ paddingBottom: 'max(20px, calc(env(safe-area-inset-bottom) + 16px))' }}>
+          {children}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
