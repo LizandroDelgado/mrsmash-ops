@@ -464,7 +464,7 @@ export default function DashboardPage() {
                       <ReferenceLine y={0} stroke={C.border} />
                       <Bar dataKey="entradas" stackId="f" fill="#199e70" radius={[4, 4, 0, 0]} barSize={14} />
                       <Bar dataKey="salidas" stackId="f" fill="#d95926" radius={[4, 4, 0, 0]} barSize={14} />
-                      <Line dataKey="saldo" stroke="#3987e5" strokeWidth={2} dot={{ r: 4, fill: '#3987e5', stroke: C.surface, strokeWidth: 2 }} />
+                      <Line dataKey="saldo" stroke="#3987e5" strokeWidth={2} isAnimationActive={false} dot={{ r: 4, fill: '#3987e5', stroke: C.surface, strokeWidth: 2 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
